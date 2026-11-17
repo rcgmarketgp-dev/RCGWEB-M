@@ -1,0 +1,1279 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Department,
+  HeroSlide,
+  Language,
+  SectionCustomization,
+  SectionId,
+  SiteSectionsConfig,
+  SiteSettings,
+  CampaignLanding,
+} from '../types';
+import { RcgLogo } from './RcgLogo';
+import {
+  X,
+  Save,
+  Upload,
+  SlidersHorizontal,
+  Link2,
+  Type,
+  Image as ImageIcon,
+  Palette,
+  MousePointerClick,
+  CheckCircle2,
+} from 'lucide-react';
+
+interface SectionEditorModalProps {
+  isOpen: boolean;
+  sectionId: SectionId | null;
+  language: Language;
+  settings: SiteSettings;
+  sectionsConfig: SiteSectionsConfig;
+  heroSlides: HeroSlide[];
+  departments: Department[];
+  campaigns: CampaignLanding[];
+  onUpdateSettings: (settings: SiteSettings) => void;
+  onUpdateSectionsConfig: (config: SiteSectionsConfig) => void;
+  onUpdateSlides: (slides: HeroSlide[]) => void;
+  onUpdateDepartments: (depts: Department[]) => void;
+  onUpdateCampaigns: (campaigns: CampaignLanding[]) => void;
+  onClose: () => void;
+  onNotify: (msg: string) => void;
+}
+
+const SECTION_META: Record<SectionId, { fa: string; en: string }> = {
+  header: { fa: 'هدر سایت، لوگو و دکمه فراخوان بالا', en: 'Header Logo, Brand Colors & Top CTA' },
+  hero: { fa: 'اسلایدر اصلی و فراخوان‌های صفحه نخست (Hero)', en: 'Hero Carousel, Imagery & CTA Buttons' },
+  departments: { fa: 'بخش دپارتمان‌های تخصصی چهارگانه', en: 'Four Specialized Departments Section' },
+  catalog: { fa: 'کاتالوگ ماشین‌آلات و تجهیزات برشکاری', en: 'Machinery & Tooling Catalog Section' },
+  campaigns: { fa: 'بخش کمپین‌ها و صفحات فرود فروش', en: 'Active Campaigns Showcase' },
+  calculator: { fa: 'محاسبه‌گر آنلاین تیزکاری اره الماسه', en: 'Saw Blade Sharpening Calculator' },
+  media: { fa: 'مرکز رسانه، مقالات فنی و اخبار', en: 'Media Center & Technical Insights' },
+  about: { fa: 'معرفی گروه صنعتی آرسی و تصویر مجموعه', en: 'About RCG & Facility Showcase' },
+  contact: { fa: 'بخش تماس با ما و درخواست کارشناسی', en: 'Contact & Inquiry Section' },
+  footer: { fa: 'فوتر سایت، توضیحات برند و دسترسی‌ها', en: 'Footer Brand Summary & Actions' },
+};
+
+const QUICK_LINK_OPTIONS = [
+  { value: '#default', fa: 'عملکرد پیش‌فرض بخش / مودال', en: 'Default Section / Modal Action' },
+  { value: '#consultation-modal', fa: 'باز کردن فرم مشاوره و پیش‌فاکتور', en: 'Open Consultation Modal' },
+  { value: '#hero', fa: 'اسکرول به ابتدای صفحه (#hero)', en: 'Scroll to Top (#hero)' },
+  { value: '#departments', fa: 'اسکرول به دپارتمان‌ها (#departments)', en: 'Scroll to Departments (#departments)' },
+  { value: '#catalog', fa: 'اسکرول به کاتالوگ دستگاه‌ها (#catalog)', en: 'Scroll to Catalog (#catalog)' },
+  { value: '#campaigns', fa: 'اسکرول به کمپین‌ها (#campaigns)', en: 'Scroll to Campaigns (#campaigns)' },
+  { value: '#calculator', fa: 'اسکرول به محاسبه‌گر تیزکاری (#calculator)', en: 'Scroll to Calculator (#calculator)' },
+  { value: '#media', fa: 'اسکرول به مرکز رسانه (#media)', en: 'Scroll to Media Center (#media)' },
+  { value: '#about', fa: 'اسکرول به درباره آرسی (#about)', en: 'Scroll to About RCG (#about)' },
+  { value: '#contact', fa: 'اسکرول به تماس با ما (#contact)', en: 'Scroll to Contact (#contact)' },
+];
+
+export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
+  isOpen,
+  sectionId,
+  language,
+  settings,
+  sectionsConfig,
+  heroSlides,
+  departments,
+  campaigns,
+  onUpdateSettings,
+  onUpdateSectionsConfig,
+  onUpdateSlides,
+  onUpdateDepartments,
+  onUpdateCampaigns,
+  onClose,
+  onNotify,
+}) => {
+  const [draftSettings, setDraftSettings] = useState<SiteSettings>({ ...settings });
+  const [draftSection, setDraftSection] = useState<SectionCustomization>({});
+  const [draftSlides, setDraftSlides] = useState<HeroSlide[]>(heroSlides);
+  const [activeSlideIdx, setActiveSlideIdx] = useState(0);
+  const [draftDepts, setDraftDepts] = useState<Department[]>(departments);
+  const [activeDeptIdx, setActiveDeptIdx] = useState(0);
+  const [draftCampaigns, setDraftCampaigns] = useState<CampaignLanding[]>(campaigns);
+  const [activeCampIdx, setActiveCampIdx] = useState(0);
+  const [previewDarkHeader, setPreviewDarkHeader] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !sectionId) return;
+    setDraftSettings({ ...settings });
+    if (sectionId !== 'header') {
+      setDraftSection({ ...(sectionsConfig[sectionId] || {}) });
+    }
+    setDraftSlides(heroSlides.map((s) => ({ ...s })));
+    setActiveSlideIdx(0);
+    setDraftDepts(departments.map((d) => ({ ...d })));
+    setActiveDeptIdx(0);
+    setDraftCampaigns(campaigns.map((c) => ({ ...c })));
+    setActiveCampIdx(0);
+  }, [isOpen, sectionId, settings, sectionsConfig, heroSlides, departments, campaigns]);
+
+  if (!isOpen || !sectionId) return null;
+
+  const isRtl = language === 'fa';
+  const meta = SECTION_META[sectionId];
+
+  const handleFileUpload = (
+    file: File | undefined,
+    onLoaded: (dataUrl: string) => void
+  ) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        onLoaded(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (sectionId === 'header') {
+      onUpdateSettings(draftSettings);
+    } else {
+      onUpdateSectionsConfig({
+        ...sectionsConfig,
+        [sectionId]: draftSection,
+      });
+
+      if (sectionId === 'hero') {
+        onUpdateSlides(draftSlides);
+      } else if (sectionId === 'departments') {
+        onUpdateDepartments(draftDepts);
+      } else if (sectionId === 'campaigns') {
+        onUpdateCampaigns(draftCampaigns);
+      }
+    }
+
+    onNotify(
+      isRtl
+        ? `تنظیمات بخش «${meta.fa}» با موفقیت ذخیره و اعمال شد`
+        : `Updated "${meta.en}" settings`
+    );
+    onClose();
+  };
+
+  const inputClass =
+    'w-full bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none transition-colors';
+
+  const currentSlide = draftSlides[activeSlideIdx] || draftSlides[0];
+  const currentDept = draftDepts[activeDeptIdx] || draftDepts[0];
+  const currentCamp = draftCampaigns[activeCampIdx] || draftCampaigns[0];
+
+  const renderLinkPicker = (
+    label: string,
+    value: string | undefined,
+    onChange: (val: string) => void
+  ) => (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+        <Link2 className="w-3.5 h-3.5 text-[#144AE0] dark:text-[#A6D6FE]" />
+        <span>{label}</span>
+      </label>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <select
+          value={
+            QUICK_LINK_OPTIONS.some((opt) => opt.value === (value || '#default'))
+              ? value || '#default'
+              : '__custom__'
+          }
+          onChange={(e) => {
+            if (e.target.value !== '__custom__') {
+              onChange(e.target.value);
+            }
+          }}
+          className={inputClass}
+        >
+          {QUICK_LINK_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {isRtl ? opt.fa : opt.en}
+            </option>
+          ))}
+          <option value="__custom__">{isRtl ? 'لینک دلخواه (URL / شماره تماس)' : 'Custom URL'}</option>
+        </select>
+        <input
+          type="text"
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="#departments or https://..."
+          className={`${inputClass} font-mono`}
+          dir="ltr"
+        />
+      </div>
+    </div>
+  );
+
+  const renderImageEditor = (
+    label: string,
+    imageUrl: string | undefined,
+    onChange: (url: string) => void
+  ) => (
+    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-3">
+      <label className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
+        <ImageIcon className="w-4 h-4 text-[#FD5202]" />
+        <span>{label}</span>
+      </label>
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="w-full sm:w-36 h-24 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-blue-800 shrink-0">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt="Section Preview"
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-slate-400 text-[11px]">
+              No Image
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 w-full space-y-2">
+          <input
+            type="text"
+            value={imageUrl || ''}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="/assets/... or https://..."
+            className={`${inputClass} font-mono`}
+            dir="ltr"
+          />
+          <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer transition-colors">
+            <Upload className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'آپلود تصویر جدید از سیستم' : 'Upload New Image'}</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleFileUpload(e.target.files?.[0], onChange)}
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-sm">
+      <form
+        onSubmit={handleSave}
+        className="w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col text-slate-900 dark:text-white"
+      >
+        {/* Modal Header */}
+        <div className="px-6 py-4 bg-slate-50 dark:bg-[#060F26] border-b border-slate-200 dark:border-blue-900/60 flex items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-[#FD5202] text-white shadow-sm">
+              <SlidersHorizontal className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-black text-[#091A42] dark:text-white">
+                {isRtl ? `تنظیمات بخش: ${meta.fa}` : `Edit Section: ${meta.en}`}
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-[#A6D6FE]">
+                {isRtl
+                  ? 'تغییر مستقیم متن‌ها، تصاویر، متن کلیدها و لینک‌های این بخش'
+                  : 'Customize bilingual texts, photos, button labels and links'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-blue-800 text-slate-500 hover:text-[#FD5202] cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {/* HEADER & LOGO SETTINGS */}
+          {sectionId === 'header' && (
+            <div className="space-y-5">
+              {/* Live Logo Preview Box */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
+                    <Palette className="w-4 h-4 text-[#FD5202]" />
+                    <span>{isRtl ? 'پیش‌نمایش زنده لوگوی هدر سایت' : 'Live Header Logo Preview'}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDarkHeader(!previewDarkHeader)}
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 cursor-pointer"
+                  >
+                    {previewDarkHeader
+                      ? isRtl
+                        ? 'پیش‌نمایش روی هدر روشن'
+                        : 'Preview Light BG'
+                      : isRtl
+                      ? 'پیش‌نمایش روی هدر تیره'
+                      : 'Preview Dark BG'}
+                  </button>
+                </div>
+
+                <div
+                  className={`p-5 rounded-2xl border flex items-center justify-between transition-colors ${
+                    previewDarkHeader
+                      ? 'bg-[#060F26] border-blue-800 text-white'
+                      : 'bg-white border-slate-200 text-slate-900'
+                  }`}
+                >
+                  <RcgLogo
+                    variant={draftSettings.logoVariant || 'color'}
+                    inverted={previewDarkHeader}
+                    height={draftSettings.logoHeight || 36}
+                    showSubtitle={draftSettings.logoShowSubtitle !== false}
+                    subtitleType={isRtl ? 'fa' : 'en'}
+                    logoType={draftSettings.logoType || 'vector'}
+                    customLogoUrl={draftSettings.customLogoUrl}
+                    primaryColor={draftSettings.logoPrimaryColor || '#144AE0'}
+                    secondaryColor={draftSettings.logoSecondaryColor || '#091A42'}
+                    accentColor={draftSettings.logoAccentColor || '#FD5202'}
+                    companyNameFa={draftSettings.companyNameFa}
+                    sloganFa={draftSettings.sloganFa}
+                  />
+                  <span className="px-4 py-2 rounded-xl bg-[#FD5202] text-white text-xs font-bold">
+                    {isRtl
+                      ? draftSettings.headerCtaTextFa || 'درخواست مشاوره و قیمت'
+                      : draftSettings.headerCtaTextEn || 'Request Quote'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Logo Type Selector */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDraftSettings({ ...draftSettings, logoType: 'vector' })}
+                  className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 cursor-pointer ${
+                    (draftSettings.logoType || 'vector') === 'vector'
+                      ? 'bg-[#144AE0] text-white border-[#144AE0]'
+                      : 'bg-slate-50 dark:bg-[#060F26] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isRtl ? 'لوگوی برداری RCG (قابل رنگ‌آمیزی)' : 'RCG Vector Logo'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraftSettings({ ...draftSettings, logoType: 'custom' })}
+                  className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 cursor-pointer ${
+                    draftSettings.logoType === 'custom'
+                      ? 'bg-[#144AE0] text-white border-[#144AE0]'
+                      : 'bg-slate-50 dark:bg-[#060F26] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                  }`}
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  <span>{isRtl ? 'آپلود لوگوی تصویری سفارشی' : 'Custom Image Logo'}</span>
+                </button>
+              </div>
+
+              {draftSettings.logoType === 'custom' ? (
+                renderImageEditor(
+                  isRtl ? 'فایل یا آدرس لوگوی سفارشی هدر' : 'Custom Header Logo Image',
+                  draftSettings.customLogoUrl,
+                  (url) => setDraftSettings({ ...draftSettings, customLogoUrl: url })
+                )
+              ) : (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        {isRtl ? 'رنگ اصلی (آبی لوگو)' : 'Primary Color'}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={draftSettings.logoPrimaryColor || '#144AE0'}
+                          onChange={(e) =>
+                            setDraftSettings({ ...draftSettings, logoPrimaryColor: e.target.value })
+                          }
+                          className="w-10 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={draftSettings.logoPrimaryColor || '#144AE0'}
+                          onChange={(e) =>
+                            setDraftSettings({ ...draftSettings, logoPrimaryColor: e.target.value })
+                          }
+                          className={`${inputClass} font-mono`}
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        {isRtl ? 'رنگ بدنه حروف (سرمه‌ای)' : 'Secondary Color'}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={draftSettings.logoSecondaryColor || '#091A42'}
+                          onChange={(e) =>
+                            setDraftSettings({ ...draftSettings, logoSecondaryColor: e.target.value })
+                          }
+                          className="w-10 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={draftSettings.logoSecondaryColor || '#091A42'}
+                          onChange={(e) =>
+                            setDraftSettings({ ...draftSettings, logoSecondaryColor: e.target.value })
+                          }
+                          className={`${inputClass} font-mono`}
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        {isRtl ? 'رنگ تاکیدی (نارنجی)' : 'Accent Color'}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={draftSettings.logoAccentColor || '#FD5202'}
+                          onChange={(e) =>
+                            setDraftSettings({ ...draftSettings, logoAccentColor: e.target.value })
+                          }
+                          className="w-10 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={draftSettings.logoAccentColor || '#FD5202'}
+                          onChange={(e) =>
+                            setDraftSettings({ ...draftSettings, logoAccentColor: e.target.value })
+                          }
+                          className={`${inputClass} font-mono`}
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Size, Variant & Subtitle Controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isRtl ? `اندازه لوگوی هدر: ${draftSettings.logoHeight || 36}px` : `Logo Height: ${draftSettings.logoHeight || 36}px`}
+                  </label>
+                  <input
+                    type="range"
+                    min={26}
+                    max={56}
+                    value={draftSettings.logoHeight || 36}
+                    onChange={(e) =>
+                      setDraftSettings({ ...draftSettings, logoHeight: Number(e.target.value) })
+                    }
+                    className="w-full accent-[#FD5202]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'حالت نمایش لوگو' : 'Logo Style Variant'}
+                  </label>
+                  <select
+                    value={draftSettings.logoVariant || 'color'}
+                    onChange={(e) =>
+                      setDraftSettings({
+                        ...draftSettings,
+                        logoVariant: e.target.value as 'color' | 'dark' | 'light',
+                      })
+                    }
+                    className={inputClass}
+                  >
+                    <option value="color">{isRtl ? 'تمام‌رنگی رسمی (Color)' : 'Brand Color'}</option>
+                    <option value="dark">{isRtl ? 'تک‌رنگ تیره (Dark)' : 'Monochrome Dark'}</option>
+                    <option value="light">{isRtl ? 'تک‌رنگ سفید (Light)' : 'Monochrome Light'}</option>
+                  </select>
+                </div>
+
+                <label className="flex items-center gap-2 pt-4 cursor-pointer text-xs font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={draftSettings.logoShowSubtitle !== false}
+                    onChange={(e) =>
+                      setDraftSettings({ ...draftSettings, logoShowSubtitle: e.target.checked })
+                    }
+                    className="w-4 h-4 accent-[#FD5202] rounded"
+                  />
+                  <span>{isRtl ? 'نمایش زیرعنوان برند' : 'Show Brand Subtitle'}</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'نام برند زیر لوگو (فارسی)' : 'Company Name (Fa)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={draftSettings.companyNameFa}
+                    onChange={(e) => setDraftSettings({ ...draftSettings, companyNameFa: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'شعار زیر لوگو (فارسی)' : 'Brand Slogan (Fa)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={draftSettings.sloganFa}
+                    onChange={(e) => setDraftSettings({ ...draftSettings, sloganFa: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              {/* Header CTA Text & Link */}
+              <div className="p-4 rounded-2xl bg-orange-50/60 dark:bg-blue-950/40 border border-orange-200 dark:border-blue-900 space-y-3">
+                <p className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
+                  <MousePointerClick className="w-4 h-4 text-[#FD5202]" />
+                  <span>{isRtl ? 'تنظیمات کلید فراخوان هدر (Header CTA)' : 'Header CTA Button & Link'}</span>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    value={draftSettings.headerCtaTextFa || ''}
+                    onChange={(e) =>
+                      setDraftSettings({ ...draftSettings, headerCtaTextFa: e.target.value })
+                    }
+                    placeholder="متن فارسی دکمه هدر..."
+                    className={inputClass}
+                  />
+                  <input
+                    type="text"
+                    value={draftSettings.headerCtaTextEn || ''}
+                    onChange={(e) =>
+                      setDraftSettings({ ...draftSettings, headerCtaTextEn: e.target.value })
+                    }
+                    placeholder="Header Button Text (En)"
+                    className={inputClass}
+                  />
+                </div>
+                {renderLinkPicker(
+                  isRtl ? 'لینک مقصد دکمه هدر' : 'Header Button Link',
+                  draftSettings.headerCtaLink || '#consultation-modal',
+                  (val) => setDraftSettings({ ...draftSettings, headerCtaLink: val })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* HERO SECTION EDITOR */}
+          {sectionId === 'hero' && currentSlide && (
+            <div className="space-y-5">
+              {/* Slide Selector Tabs */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {draftSlides.map((sl, idx) => (
+                  <button
+                    key={sl.id}
+                    type="button"
+                    onClick={() => setActiveSlideIdx(idx)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                      idx === activeSlideIdx
+                        ? 'bg-[#144AE0] text-white border-[#144AE0]'
+                        : 'bg-slate-100 dark:bg-[#060F26] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                    }`}
+                  >
+                    {isRtl ? `اسلاید ${idx + 1}` : `Slide ${idx + 1}`}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'نشان بالای بخش (فارسی)' : 'Section Kicker Badge (Fa)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={draftSection.badgeFa || ''}
+                    onChange={(e) => setDraftSection({ ...draftSection, badgeFa: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Section Kicker Badge (English)
+                  </label>
+                  <input
+                    type="text"
+                    value={draftSection.badgeEn || ''}
+                    onChange={(e) => setDraftSection({ ...draftSection, badgeEn: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'تیتر اسلاید (فارسی)' : 'Slide Title (Fa)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={currentSlide.titleFa}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) => (i === activeSlideIdx ? { ...s, titleFa: e.target.value } : s))
+                      )
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Slide Title (English)
+                  </label>
+                  <input
+                    type="text"
+                    value={currentSlide.titleEn}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) => (i === activeSlideIdx ? { ...s, titleEn: e.target.value } : s))
+                      )
+                    }
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'متن نارنجی تاکیدی (فارسی)' : 'Highlight Text (Fa)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={currentSlide.highlightFa}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) =>
+                          i === activeSlideIdx ? { ...s, highlightFa: e.target.value } : s
+                        )
+                      )
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Highlight Text (English)
+                  </label>
+                  <input
+                    type="text"
+                    value={currentSlide.highlightEn}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) =>
+                          i === activeSlideIdx ? { ...s, highlightEn: e.target.value } : s
+                        )
+                      )
+                    }
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isRtl ? 'زیرتیتر اسلاید (فارسی)' : 'Subtitle (Fa)'}
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={currentSlide.subtitleFa}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) => (i === activeSlideIdx ? { ...s, subtitleFa: e.target.value } : s))
+                      )
+                    }
+                    className={`${inputClass} resize-none`}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Subtitle (English)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={currentSlide.subtitleEn}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) => (i === activeSlideIdx ? { ...s, subtitleEn: e.target.value } : s))
+                      )
+                    }
+                    className={`${inputClass} resize-none`}
+                  />
+                </div>
+              </div>
+
+              {renderImageEditor(
+                isRtl ? `تصویر اصلی اسلاید ${activeSlideIdx + 1}` : `Slide ${activeSlideIdx + 1} Showcase Image`,
+                currentSlide.image,
+                (url) =>
+                  setDraftSlides(
+                    draftSlides.map((s, i) => (i === activeSlideIdx ? { ...s, image: url } : s))
+                  )
+              )}
+
+              {/* Primary CTA Text & Link */}
+              <div className="p-4 rounded-2xl bg-orange-50/50 dark:bg-blue-950/40 border border-orange-200 dark:border-blue-900 space-y-3">
+                <p className="text-xs font-bold text-[#091A42] dark:text-white">
+                  {isRtl ? 'کلید اول (Primary CTA)' : 'Primary CTA Button'}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    value={currentSlide.primaryCtaFa}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) =>
+                          i === activeSlideIdx ? { ...s, primaryCtaFa: e.target.value } : s
+                        )
+                      )
+                    }
+                    placeholder="متن فارسی کلید اول..."
+                    className={inputClass}
+                  />
+                  <input
+                    type="text"
+                    value={currentSlide.primaryCtaEn}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) =>
+                          i === activeSlideIdx ? { ...s, primaryCtaEn: e.target.value } : s
+                        )
+                      )
+                    }
+                    placeholder="Primary Button (En)"
+                    className={inputClass}
+                  />
+                </div>
+                {renderLinkPicker(
+                  isRtl ? 'لینک مقصد کلید اول' : 'Primary Button Link',
+                  currentSlide.primaryCtaLink || '#departments',
+                  (val) =>
+                    setDraftSlides(
+                      draftSlides.map((s, i) =>
+                        i === activeSlideIdx ? { ...s, primaryCtaLink: val } : s
+                      )
+                    )
+                )}
+              </div>
+
+              {/* Secondary CTA Text & Link */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900 space-y-3">
+                <p className="text-xs font-bold text-[#091A42] dark:text-white">
+                  {isRtl ? 'کلید دوم (Secondary CTA)' : 'Secondary CTA Button'}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    value={currentSlide.secondaryCtaFa}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) =>
+                          i === activeSlideIdx ? { ...s, secondaryCtaFa: e.target.value } : s
+                        )
+                      )
+                    }
+                    placeholder="متن فارسی کلید دوم..."
+                    className={inputClass}
+                  />
+                  <input
+                    type="text"
+                    value={currentSlide.secondaryCtaEn}
+                    onChange={(e) =>
+                      setDraftSlides(
+                        draftSlides.map((s, i) =>
+                          i === activeSlideIdx ? { ...s, secondaryCtaEn: e.target.value } : s
+                        )
+                      )
+                    }
+                    placeholder="Secondary Button (En)"
+                    className={inputClass}
+                  />
+                </div>
+                {renderLinkPicker(
+                  isRtl ? 'لینک مقصد کلید دوم' : 'Secondary Button Link',
+                  currentSlide.secondaryCtaLink || '#calculator',
+                  (val) =>
+                    setDraftSlides(
+                      draftSlides.map((s, i) =>
+                        i === activeSlideIdx ? { ...s, secondaryCtaLink: val } : s
+                      )
+                    )
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* STANDARD SECTION FIELDS (Departments, Catalog, Campaigns, Calculator, Media, About, Contact, Footer) */}
+          {sectionId !== 'header' && sectionId !== 'hero' && (
+            <div className="space-y-5">
+              {/* Text Headings Box */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-4">
+                <p className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
+                  <Type className="w-4 h-4 text-[#144AE0] dark:text-[#A6D6FE]" />
+                  <span>{isRtl ? 'عناوین و متن‌های بخش' : 'Section Copy & Headings'}</span>
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {isRtl ? 'متن برچسب / تگ (فارسی)' : 'Badge Label (Fa)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={draftSection.badgeFa || ''}
+                      onChange={(e) => setDraftSection({ ...draftSection, badgeFa: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Badge Label (English)
+                    </label>
+                    <input
+                      type="text"
+                      value={draftSection.badgeEn || ''}
+                      onChange={(e) => setDraftSection({ ...draftSection, badgeEn: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+
+                {sectionId !== 'footer' && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'تیتر اصلی بخش (فارسی)' : 'Section Title (Fa)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={draftSection.titleFa || ''}
+                          onChange={(e) =>
+                            setDraftSection({ ...draftSection, titleFa: e.target.value })
+                          }
+                          className={inputClass}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Section Title (English)
+                        </label>
+                        <input
+                          type="text"
+                          value={draftSection.titleEn || ''}
+                          onChange={(e) =>
+                            setDraftSection({ ...draftSection, titleEn: e.target.value })
+                          }
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'زیرتیتر توضیحی (فارسی)' : 'Section Subtitle (Fa)'}
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={draftSection.subtitleFa || ''}
+                          onChange={(e) =>
+                            setDraftSection({ ...draftSection, subtitleFa: e.target.value })
+                          }
+                          className={`${inputClass} resize-none`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Section Subtitle (English)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={draftSection.subtitleEn || ''}
+                          onChange={(e) =>
+                            setDraftSection({ ...draftSection, subtitleEn: e.target.value })
+                          }
+                          className={`${inputClass} resize-none`}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* About & Footer Body Copy */}
+                {(sectionId === 'about' || sectionId === 'footer') && (
+                  <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-blue-900">
+                    {sectionId === 'about' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'عنوان تاریخچه (فارسی)' : 'History Heading (Fa)'}
+                          </label>
+                          <input
+                            type="text"
+                            value={draftSection.historyTitleFa || ''}
+                            onChange={(e) =>
+                              setDraftSection({ ...draftSection, historyTitleFa: e.target.value })
+                            }
+                            className={inputClass}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            History Heading (English)
+                          </label>
+                          <input
+                            type="text"
+                            value={draftSection.historyTitleEn || ''}
+                            onChange={(e) =>
+                              setDraftSection({ ...draftSection, historyTitleEn: e.target.value })
+                            }
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'متن اصلی / پاراگراف ۱ (فارسی)' : 'Body Paragraph (Fa)'}
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={draftSection.bodyFa || ''}
+                          onChange={(e) => setDraftSection({ ...draftSection, bodyFa: e.target.value })}
+                          className={`${inputClass} resize-none`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Body Paragraph (English)
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={draftSection.bodyEn || ''}
+                          onChange={(e) => setDraftSection({ ...draftSection, bodyEn: e.target.value })}
+                          className={`${inputClass} resize-none`}
+                        />
+                      </div>
+                    </div>
+
+                    {sectionId === 'about' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'پاراگراف دوم (فارسی)' : 'Second Paragraph (Fa)'}
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={draftSection.bodySecondaryFa || ''}
+                            onChange={(e) =>
+                              setDraftSection({ ...draftSection, bodySecondaryFa: e.target.value })
+                            }
+                            className={`${inputClass} resize-none`}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            Second Paragraph (English)
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={draftSection.bodySecondaryEn || ''}
+                            onChange={(e) =>
+                              setDraftSection({ ...draftSection, bodySecondaryEn: e.target.value })
+                            }
+                            className={`${inputClass} resize-none`}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Section Photo Upload (About & Calculator) */}
+              {(sectionId === 'about' || sectionId === 'calculator') &&
+                renderImageEditor(
+                  isRtl ? 'تصویر اختصاصی این بخش' : 'Section Showcase Image',
+                  draftSection.image,
+                  (url) => setDraftSection({ ...draftSection, image: url })
+                )}
+
+              {/* Button Label & Link for Sections with Main CTA */}
+              {sectionId !== 'departments' && (
+                <div className="p-4 rounded-2xl bg-orange-50/50 dark:bg-blue-950/40 border border-orange-200 dark:border-blue-900 space-y-3">
+                  <p className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
+                    <MousePointerClick className="w-4 h-4 text-[#FD5202]" />
+                    <span>{isRtl ? 'تنظیمات متن کلید و لینک فراخوان (CTA)' : 'Section CTA Button & Link'}</span>
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                        {isRtl ? 'متن فارسی کلید' : 'Button Text (Fa)'}
+                      </label>
+                      <input
+                        type="text"
+                        value={draftSection.ctaTextFa || ''}
+                        onChange={(e) =>
+                          setDraftSection({ ...draftSection, ctaTextFa: e.target.value })
+                        }
+                        className={inputClass}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                        Button Text (English)
+                      </label>
+                      <input
+                        type="text"
+                        value={draftSection.ctaTextEn || ''}
+                        onChange={(e) =>
+                          setDraftSection({ ...draftSection, ctaTextEn: e.target.value })
+                        }
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
+                  {renderLinkPicker(
+                    isRtl ? 'لینک مقصد کلید بخش' : 'CTA Button Target Link',
+                    draftSection.ctaLink || '#default',
+                    (val) => setDraftSection({ ...draftSection, ctaLink: val })
+                  )}
+                </div>
+              )}
+
+              {/* Contextual Item Editor for Departments */}
+              {sectionId === 'departments' && currentDept && (
+                <div className="p-4 rounded-2xl bg-blue-50/50 dark:bg-[#060F26] border border-blue-200 dark:border-blue-800 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {draftDepts.map((dept, idx) => (
+                      <button
+                        key={dept.id}
+                        type="button"
+                        onClick={() => setActiveDeptIdx(idx)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                          idx === activeDeptIdx
+                            ? 'bg-[#144AE0] text-white border-[#144AE0]'
+                            : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                        }`}
+                      >
+                        {isRtl ? dept.titleFa : dept.titleEn}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      value={currentDept.titleFa}
+                      onChange={(e) =>
+                        setDraftDepts(
+                          draftDepts.map((d, i) =>
+                            i === activeDeptIdx ? { ...d, titleFa: e.target.value } : d
+                          )
+                        )
+                      }
+                      placeholder="عنوان دپارتمان..."
+                      className={inputClass}
+                    />
+                    <input
+                      type="text"
+                      value={currentDept.titleEn}
+                      onChange={(e) =>
+                        setDraftDepts(
+                          draftDepts.map((d, i) =>
+                            i === activeDeptIdx ? { ...d, titleEn: e.target.value } : d
+                          )
+                        )
+                      }
+                      placeholder="Department Title (En)"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <textarea
+                      rows={2}
+                      value={currentDept.shortDescFa}
+                      onChange={(e) =>
+                        setDraftDepts(
+                          draftDepts.map((d, i) =>
+                            i === activeDeptIdx ? { ...d, shortDescFa: e.target.value } : d
+                          )
+                        )
+                      }
+                      placeholder="توضیح کوتاه فارسی..."
+                      className={`${inputClass} resize-none`}
+                    />
+                    <textarea
+                      rows={2}
+                      value={currentDept.shortDescEn}
+                      onChange={(e) =>
+                        setDraftDepts(
+                          draftDepts.map((d, i) =>
+                            i === activeDeptIdx ? { ...d, shortDescEn: e.target.value } : d
+                          )
+                        )
+                      }
+                      placeholder="Short Description (En)"
+                      className={`${inputClass} resize-none`}
+                    />
+                  </div>
+
+                  {renderImageEditor(
+                    isRtl ? `تصویر کارت دپارتمان «${currentDept.titleFa}»` : `Photo for ${currentDept.titleEn}`,
+                    currentDept.image,
+                    (url) =>
+                      setDraftDepts(
+                        draftDepts.map((d, i) => (i === activeDeptIdx ? { ...d, image: url } : d))
+                      )
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      value={currentDept.bottomBannerFa}
+                      onChange={(e) =>
+                        setDraftDepts(
+                          draftDepts.map((d, i) =>
+                            i === activeDeptIdx ? { ...d, bottomBannerFa: e.target.value } : d
+                          )
+                        )
+                      }
+                      placeholder="متن کلید بنر پایین کارت (فارسی)"
+                      className={inputClass}
+                    />
+                    <input
+                      type="text"
+                      value={currentDept.bottomBannerEn}
+                      onChange={(e) =>
+                        setDraftDepts(
+                          draftDepts.map((d, i) =>
+                            i === activeDeptIdx ? { ...d, bottomBannerEn: e.target.value } : d
+                          )
+                        )
+                      }
+                      placeholder="Bottom Banner CTA (En)"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {renderLinkPicker(
+                    isRtl ? 'لینک مقصد کلید بنر دپارتمان' : 'Department Banner CTA Link',
+                    currentDept.bottomBannerLink || '#default',
+                    (val) =>
+                      setDraftDepts(
+                        draftDepts.map((d, i) =>
+                          i === activeDeptIdx ? { ...d, bottomBannerLink: val } : d
+                        )
+                      )
+                  )}
+                </div>
+              )}
+
+              {/* Contextual Quick Campaign Item Editor */}
+              {sectionId === 'campaigns' && currentCamp && (
+                <div className="p-4 rounded-2xl bg-blue-50/50 dark:bg-[#060F26] border border-blue-200 dark:border-blue-800 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {draftCampaigns.map((cmp, idx) => (
+                      <button
+                        key={cmp.id}
+                        type="button"
+                        onClick={() => setActiveCampIdx(idx)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                          idx === activeCampIdx
+                            ? 'bg-[#FD5202] text-white border-[#FD5202]'
+                            : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                        }`}
+                      >
+                        {isRtl ? cmp.titleFa : cmp.titleEn}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      value={currentCamp.headlineFa}
+                      onChange={(e) =>
+                        setDraftCampaigns(
+                          draftCampaigns.map((c, i) =>
+                            i === activeCampIdx ? { ...c, headlineFa: e.target.value } : c
+                          )
+                        )
+                      }
+                      placeholder="تیتر کمپین (فارسی)"
+                      className={inputClass}
+                    />
+                    <input
+                      type="text"
+                      value={currentCamp.ctaTextFa}
+                      onChange={(e) =>
+                        setDraftCampaigns(
+                          draftCampaigns.map((c, i) =>
+                            i === activeCampIdx ? { ...c, ctaTextFa: e.target.value } : c
+                          )
+                        )
+                      }
+                      placeholder="متن دکمه ثبت‌نام کمپین (فارسی)"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {renderImageEditor(
+                    isRtl ? `تصویر کمپین «${currentCamp.titleFa}»` : `Hero Photo for ${currentCamp.titleEn}`,
+                    currentCamp.heroImage,
+                    (url) =>
+                      setDraftCampaigns(
+                        draftCampaigns.map((c, i) =>
+                          i === activeCampIdx ? { ...c, heroImage: url } : c
+                        )
+                      )
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="px-6 py-4 bg-slate-50 dark:bg-[#060F26] border-t border-slate-200 dark:border-blue-900/60 flex items-center justify-end gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-blue-800 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer"
+          >
+            {isRtl ? 'انصراف' : 'Cancel'}
+          </button>
+          <button
+            type="submit"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold shadow-md cursor-pointer"
+          >
+            <Save className="w-4 h-4" />
+            <span>{isRtl ? 'ذخیره و اعمال در سایت' : 'Save & Apply Changes'}</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};

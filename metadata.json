@@ -1,0 +1,6 @@
+{
+  "name": "RCG Woodworking Solutions",
+  "description": "گروه صنعتی و بازرگانی آرسی - راهکار یکپارچه ماشین‌ابزار صنعت چوب",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -60,7 +60,7 @@ export const MachineShowcaseCard: React.FC<MachineShowcaseCardProps> = ({
     <motion.div
       initial={{ opacity: 0, y: 35 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-40px' }}
+      viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
       transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       className="w-full max-w-2xl mx-auto bg-gradient-to-b from-[#F8FAFC] to-[#EEF2F6] dark:from-[#091A42] dark:to-[#060F26] text-slate-900 dark:text-white rounded-2xl sm:rounded-3xl border-2 border-blue-200 dark:border-blue-900/60 shadow-2xl overflow-hidden p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6 select-none"
     >

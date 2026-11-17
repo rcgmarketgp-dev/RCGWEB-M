@@ -1,6 +1,9 @@
 import {
   collection,
+  deleteDoc,
+  deleteField,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -17,6 +20,7 @@ import {
   CampaignInquiry,
   CampaignLanding,
   Department,
+  DiscountCode,
   HeroSlide,
   Inquiry,
   MediaItem,
@@ -28,6 +32,25 @@ import {
 } from '../types';
 
 const MAX_STR_IMAGE = 695000;
+const utf8Encoder = new TextEncoder();
+
+function utf8ByteLength(str: string): number {
+  return utf8Encoder.encode(str).length;
+}
+
+function truncateToUtf8Bytes(str: string, maxBytes: number): string {
+  if (maxBytes <= 0) return '';
+  if (utf8ByteLength(str) <= maxBytes) return str;
+  let out = '';
+  let bytes = 0;
+  for (const ch of str) {
+    const chBytes = utf8ByteLength(ch);
+    if (bytes + chBytes > maxBytes) break;
+    out += ch;
+    bytes += chBytes;
+  }
+  return out;
+}
 
 function stripUndefined<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -49,21 +72,39 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): Record<strin
   return result;
 }
 
-function clamp(val: string | undefined, max: number, fallback = ''): string {
-  const str = (val ?? fallback).toString().trim();
-  return str.length > max ? str.slice(0, max) : str;
+function pickAllowedKeys(
+  obj: Record<string, unknown>,
+  allowedKeys: readonly string[]
+): Record<string, unknown> {
+  const allowed = new Set(allowedKeys);
+  const picked: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (allowed.has(k) && v !== undefined) {
+      picked[k] = v;
+    }
+  }
+  return picked;
 }
 
-function safeImageUrl(url: string | undefined, fallback = '/assets/aistudio/03_rcg_facility_hero_crop_20984afa.jpg'): string {
-  const clean = (url ?? fallback).trim() || fallback;
-  if (clean.length > MAX_STR_IMAGE) {
+function clamp(val: string | undefined, maxBytes: number, fallback = ''): string {
+  const raw = (val ?? '').toString().trim();
+  const str = raw || fallback;
+  return truncateToUtf8Bytes(str, maxBytes);
+}
+
+function safeImageUrl(
+  url: string | undefined,
+  fallback = '/assets/aistudio/03_rcg_facility_hero_crop_20984afa.jpg'
+): string {
+  const clean = (url ?? '').toString().trim() || fallback;
+  if (utf8ByteLength(clean) > MAX_STR_IMAGE) {
     return fallback;
   }
   return clean;
 }
 
 function sanitizeId(id: string): string {
-  const cleaned = id.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const cleaned = (id || '').replace(/[^a-zA-Z0-9_-]/g, '-');
   return cleaned.slice(0, 128) || `id-${Date.now()}`;
 }
 
@@ -93,6 +134,9 @@ export async function createSharpeningOrderInFirestore(
     serviceType: clamp(order.serviceType, 160, 'Standard'),
     quantity: Math.min(500, Math.max(1, Number(order.quantity) || 1)),
     estimatedPrice: clamp(order.estimatedPrice, 160, '0'),
+    originalPrice: order.originalPrice ? clamp(order.originalPrice, 160) : undefined,
+    discountCode: order.discountCode ? clamp(order.discountCode, 64) : undefined,
+    discountAmount: order.discountAmount ? clamp(order.discountAmount, 160) : undefined,
     status: 'new',
     createdAtLabel: clamp(order.createdAt, 80),
     notes: order.notes ? clamp(order.notes, 1000) : undefined,
@@ -254,6 +298,9 @@ export function subscribeCustomerRecords(
           serviceType: raw.serviceType || '',
           quantity: Number(raw.quantity) || 1,
           estimatedPrice: raw.estimatedPrice || '',
+          originalPrice: raw.originalPrice,
+          discountCode: raw.discountCode,
+          discountAmount: raw.discountAmount,
           status: raw.status || 'new',
           createdAt: raw.createdAtLabel || '',
           notes: raw.notes,
@@ -447,6 +494,49 @@ export async function syncSiteConfigToFirestore(
   }
 }
 
+function normalizeComparableValue(val: unknown): unknown {
+  if (Array.isArray(val)) {
+    return val.map(normalizeComparableValue);
+  }
+  if (val && typeof val === 'object') {
+    const entries = Object.entries(val as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b));
+    const sorted: Record<string, unknown> = {};
+    for (const [k, v] of entries) {
+      sorted[k] = normalizeComparableValue(v);
+    }
+    return sorted;
+  }
+  return val;
+}
+
+function isDocUnchanged(
+  existingData: Record<string, unknown>,
+  targetWithoutTimestamp: Record<string, unknown>
+): boolean {
+  const existingWithoutTimestamp = { ...existingData };
+  delete existingWithoutTimestamp.updatedAt;
+  const existingKeys = Object.keys(existingWithoutTimestamp).sort();
+  const targetKeys = Object.keys(targetWithoutTimestamp).sort();
+  if (existingKeys.length !== targetKeys.length) return false;
+  for (let i = 0; i < existingKeys.length; i++) {
+    if (existingKeys[i] !== targetKeys[i]) return false;
+  }
+  return (
+    JSON.stringify(normalizeComparableValue(existingWithoutTimestamp)) ===
+    JSON.stringify(normalizeComparableValue(targetWithoutTimestamp))
+  );
+}
+
+function hasDisallowedLegacyKeys(
+  existingData: Record<string, unknown>,
+  targetWithoutTimestamp: Record<string, unknown>
+): boolean {
+  const allowedKeys = new Set([...Object.keys(targetWithoutTimestamp), 'updatedAt']);
+  return Object.keys(existingData).some((key) => !allowedKeys.has(key));
+}
+
 export async function syncCollectionToFirestore<T extends { id: string }>(
   collectionName: 'hero_slides' | 'departments' | 'products' | 'media_items' | 'campaigns' | 'brand_assets',
   items: T[],
@@ -455,7 +545,508 @@ export async function syncCollectionToFirestore<T extends { id: string }>(
   const colRef = collection(db, collectionName);
   try {
     const existingSnap = await getDocs(colRef);
-    const keepIds = new Set(items.map((item) => sanitizeId(item.id)));
+    const existingMap = new Map(existingSnap.docs.map((d) => [d.id, d]));
+
+    // Deduplicate items by sanitized document ID while preserving order
+    const dedupedItems = new Map<string, { item: T; index: number }>();
+    items.forEach((item, index) => {
+      const safeId = sanitizeId(item.id);
+      if (!dedupedItems.has(safeId)) {
+        dedupedItems.set(safeId, { item, index });
+      }
+    });
+
+    const keepIds = new Set(dedupedItems.keys());
+    const legacyCleanupIds: string[] = [];
+
+    type BatchOp =
+      | { kind: 'delete'; ref: ReturnType<typeof doc>; approxBytes: number }
+      | {
+          kind: 'set';
+          ref: ReturnType<typeof doc>;
+          payload: Record<string, unknown>;
+          approxBytes: number;
+        };
+
+    const ops: BatchOp[] = [];
+
+    existingSnap.docs.forEach((docSnap) => {
+      if (!keepIds.has(docSnap.id)) {
+        ops.push({ kind: 'delete', ref: docSnap.ref, approxBytes: 128 });
+      }
+    });
+
+    for (const [safeId, { item, index }] of dedupedItems.entries()) {
+      const basePayload = stripUndefined({
+        ...mapItem(item, index),
+        id: safeId,
+      });
+
+      const existingDoc = existingMap.get(safeId);
+      if (existingDoc) {
+        const existingData = existingDoc.data() as Record<string, unknown>;
+        if (isDocUnchanged(existingData, basePayload)) {
+          continue;
+        }
+        // If legacy document contains unrecognized fields, delete first so allow update affectedKeys() never rejects
+        if (hasDisallowedLegacyKeys(existingData, basePayload)) {
+          legacyCleanupIds.push(safeId);
+        }
+      }
+
+      const fullPayload = {
+        ...basePayload,
+        updatedAt: serverTimestamp(),
+      };
+      const approxBytes = utf8ByteLength(JSON.stringify(basePayload)) + 64;
+      ops.push({
+        kind: 'set',
+        ref: doc(db, collectionName, safeId),
+        payload: fullPayload,
+        approxBytes,
+      });
+    }
+
+    // Delete any legacy docs that contain extraneous fields before rewriting clean payloads
+    for (const legacyId of legacyCleanupIds) {
+      await deleteDoc(doc(db, collectionName, legacyId));
+    }
+
+    if (ops.length === 0) return;
+
+    // Commit in safe chunks to stay well below Firestore 10 MiB / 500-op batch limits
+    const MAX_OPS_PER_BATCH = 20;
+    const MAX_BYTES_PER_BATCH = 3_000_000;
+    let currentBatch = writeBatch(db);
+    let currentOps = 0;
+    let currentBytes = 0;
+
+    for (const op of ops) {
+      if (
+        currentOps > 0 &&
+        (currentOps >= MAX_OPS_PER_BATCH || currentBytes + op.approxBytes > MAX_BYTES_PER_BATCH)
+      ) {
+        await currentBatch.commit();
+        currentBatch = writeBatch(db);
+        currentOps = 0;
+        currentBytes = 0;
+      }
+
+      if (op.kind === 'delete') {
+        currentBatch.delete(op.ref);
+      } else {
+        currentBatch.set(op.ref, op.payload);
+      }
+      currentOps += 1;
+      currentBytes += op.approxBytes;
+    }
+
+    if (currentOps > 0) {
+      await currentBatch.commit();
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, collectionName);
+  }
+}
+
+export async function upsertBrandAssetInFirestore(asset: BrandAsset): Promise<void> {
+  const safeId = sanitizeId(asset.id);
+  const path = `brand_assets/${safeId}`;
+  const docRef = doc(db, 'brand_assets', safeId);
+  const basePayload = stripUndefined(serializeBrandAssetForFirestore({ ...asset, id: safeId }));
+
+  try {
+    const existingSnap = await getDoc(docRef);
+    if (existingSnap.exists()) {
+      const existingData = existingSnap.data() as Record<string, unknown>;
+      if (isDocUnchanged(existingData, basePayload)) {
+        return;
+      }
+      if (hasDisallowedLegacyKeys(existingData, basePayload)) {
+        await deleteDoc(docRef);
+      }
+    }
+    await setDoc(docRef, {
+      ...basePayload,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteBrandAssetFromFirestore(assetId: string): Promise<void> {
+  const safeId = sanitizeId(assetId);
+  const path = `brand_assets/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'brand_assets', safeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export function serializeSlideForFirestore(slide: HeroSlide, order: number): Record<string, unknown> {
+  return {
+    id: sanitizeId(slide.id),
+    order: Number(order) || 0,
+    titleFa: clamp(slide.titleFa, 280, 'اسلاید'),
+    titleEn: clamp(slide.titleEn, 280, 'Slide'),
+    highlightFa: clamp(slide.highlightFa, 190),
+    highlightEn: clamp(slide.highlightEn, 190),
+    subtitleFa: clamp(slide.subtitleFa, 760),
+    subtitleEn: clamp(slide.subtitleEn, 760),
+    image: safeImageUrl(slide.image),
+    primaryCtaFa: clamp(slide.primaryCtaFa, 115),
+    primaryCtaEn: clamp(slide.primaryCtaEn, 115),
+    primaryCtaLink: slide.primaryCtaLink ? clamp(slide.primaryCtaLink, 280) : undefined,
+    secondaryCtaFa: clamp(slide.secondaryCtaFa, 115),
+    secondaryCtaEn: clamp(slide.secondaryCtaEn, 115),
+    secondaryCtaLink: slide.secondaryCtaLink ? clamp(slide.secondaryCtaLink, 280) : undefined,
+  };
+}
+
+const DEPARTMENT_ALLOWED_KEYS = [
+  'id', 'key', 'order', 'titleFa', 'titleEn', 'taglineFa', 'taglineEn',
+  'shortDescFa', 'shortDescEn', 'fullDescFa', 'fullDescEn', 'iconName',
+  'image', 'subSectionTitleFa', 'subSectionTitleEn', 'bottomBannerFa',
+  'bottomBannerEn', 'bottomBannerLink', 'subCards', 'servicesFa', 'servicesEn',
+  'statsFa', 'statsEn',
+] as const;
+
+const VALID_DEPARTMENT_KEYS = new Set<string>(['sales', 'service', 'sharpening', 'overhaul']);
+
+export function serializeDepartmentForFirestore(dept: Department, order: number): Record<string, unknown> {
+  const safeKey = VALID_DEPARTMENT_KEYS.has(dept.key) ? dept.key : 'sales';
+  return pickAllowedKeys(
+    {
+      ...dept,
+      id: sanitizeId(dept.id),
+      key: safeKey,
+      order: Number(order) || 0,
+      titleFa: clamp(dept.titleFa, 240, 'دپارتمان'),
+      titleEn: clamp(dept.titleEn, 240, 'Department'),
+      image: safeImageUrl(dept.image),
+      subCards: (dept.subCards || []).slice(0, 12).map((sc) => ({
+        ...sc,
+        image: safeImageUrl(sc.image, dept.image),
+      })),
+      servicesFa: (dept.servicesFa || []).slice(0, 20),
+      servicesEn: (dept.servicesEn || []).slice(0, 20),
+      statsFa: (dept.statsFa || []).slice(0, 10),
+      statsEn: (dept.statsEn || []).slice(0, 10),
+    },
+    DEPARTMENT_ALLOWED_KEYS
+  );
+}
+
+const PRODUCT_ALLOWED_KEYS = [
+  'id', 'order', 'titleFa', 'titleEn', 'category', 'categoryFa', 'categoryEn',
+  'brand', 'model', 'year', 'condition', 'conditionFa', 'conditionEn',
+  'power', 'tableSize', 'feedSpeed', 'priceFa', 'priceEn',
+  'downPaymentFa', 'downPaymentEn', 'installmentChecksFa', 'installmentChecksEn',
+  'installmentAvailable', 'specsFa', 'specsEn', 'image', 'badgeFa', 'badgeEn',
+  'featuredPoster', 'isActive', 'precisionRating', 'durabilityRating',
+  'efficiencyRating', 'qualityBadgeFa', 'qualityBadgeEn', 'tags', 'stations',
+] as const;
+
+const VALID_PRODUCT_CATEGORIES = new Set<string>(['saws', 'edgebanders', 'cnc', 'blades', 'refurbished']);
+
+export function serializeProductForFirestore(product: Product, order: number): Record<string, unknown> {
+  const safeCategory = VALID_PRODUCT_CATEGORIES.has(product.category) ? product.category : 'saws';
+  const safeCondition = product.condition === 'used' ? 'used' : 'new';
+  return pickAllowedKeys(
+    {
+      ...product,
+      id: sanitizeId(product.id),
+      order: Number(order) || 0,
+      titleFa: clamp(product.titleFa, 240, 'محصول'),
+      titleEn: clamp(product.titleEn, 240, 'Product'),
+      category: safeCategory,
+      brand: clamp(product.brand, 115, 'RCG'),
+      model: clamp(product.model, 115, 'Standard'),
+      condition: safeCondition,
+      image: safeImageUrl(product.image),
+      isActive: product.isActive !== undefined ? Boolean(product.isActive) : undefined,
+      specsFa: (product.specsFa || []).slice(0, 30),
+      specsEn: (product.specsEn || []).slice(0, 30),
+      tags: product.tags
+        ? product.tags
+            .map((t) => clamp(t, 55))
+            .filter(Boolean)
+            .slice(0, 12)
+        : undefined,
+      stations: product.stations
+        ? product.stations.slice(0, 10).map((st) => ({
+            ...st,
+            img: safeImageUrl(st.img, product.image),
+          }))
+        : undefined,
+    },
+    PRODUCT_ALLOWED_KEYS
+  );
+}
+
+const MEDIA_ALLOWED_KEYS = [
+  'id', 'order', 'type', 'typeFa', 'typeEn', 'titleFa', 'titleEn',
+  'dateFa', 'dateEn', 'readTimeFa', 'readTimeEn', 'summaryFa', 'summaryEn',
+  'contentFa', 'contentEn', 'image', 'videoUrl', 'authorFa', 'authorEn',
+  'isActive', 'tags',
+] as const;
+
+const VALID_MEDIA_TYPES = new Set<string>(['news', 'article', 'video', 'project']);
+
+export function serializeMediaForFirestore(item: MediaItem, order: number): Record<string, unknown> {
+  const safeType = VALID_MEDIA_TYPES.has(item.type) ? item.type : 'article';
+  return pickAllowedKeys(
+    {
+      ...item,
+      id: sanitizeId(item.id),
+      order: Number(order) || 0,
+      type: safeType,
+      titleFa: clamp(item.titleFa, 280, 'مطلب'),
+      titleEn: clamp(item.titleEn, 280, 'Article'),
+      image: safeImageUrl(item.image),
+      contentFa: clamp(item.contentFa, 19000),
+      contentEn: clamp(item.contentEn, 19000),
+      isActive: item.isActive !== undefined ? Boolean(item.isActive) : undefined,
+      tags: item.tags
+        ? item.tags
+            .map((t) => clamp(t, 55))
+            .filter(Boolean)
+            .slice(0, 12)
+        : undefined,
+    },
+    MEDIA_ALLOWED_KEYS
+  );
+}
+
+const CAMPAIGN_ALLOWED_KEYS = [
+  'id', 'order', 'slug', 'titleFa', 'titleEn', 'badgeFa', 'badgeEn',
+  'headlineFa', 'headlineEn', 'subheadlineFa', 'subheadlineEn', 'heroImage',
+  'ctaTextFa', 'ctaTextEn', 'secondaryCtaFa', 'secondaryCtaEn', 'featuredMachineId',
+  'specialOfferFa', 'specialOfferEn', 'discountPercentage', 'downPaymentFa',
+  'downPaymentEn', 'installmentsCountFa', 'installmentsCountEn', 'deliveryTermsFa',
+  'deliveryTermsEn', 'warrantyFa', 'warrantyEn', 'highlightsFa', 'highlightsEn',
+  'registrationTitleFa', 'registrationTitleEn', 'registrationSubtitleFa',
+  'registrationSubtitleEn', 'isActive', 'viewsCount', 'conversionsCount',
+] as const;
+
+export function serializeCampaignForFirestore(camp: CampaignLanding, order: number): Record<string, unknown> {
+  return pickAllowedKeys(
+    {
+      ...camp,
+      id: sanitizeId(camp.id),
+      order: Number(order) || 0,
+      slug: clamp(camp.slug, 145, sanitizeId(camp.id)),
+      titleFa: clamp(camp.titleFa, 240, 'کمپین'),
+      titleEn: clamp(camp.titleEn, 240, 'Campaign'),
+      heroImage: safeImageUrl(camp.heroImage),
+      isActive: Boolean(camp.isActive),
+      highlightsFa: (camp.highlightsFa || []).slice(0, 20),
+      highlightsEn: (camp.highlightsEn || []).slice(0, 20),
+    },
+    CAMPAIGN_ALLOWED_KEYS
+  );
+}
+
+const VALID_BRAND_ASSET_CATEGORIES = new Set<string>([
+  'logo',
+  'hero',
+  'departments',
+  'catalog',
+  'campaigns',
+  'media',
+  'photo',
+  'brandbook',
+  'certificate',
+]);
+
+export function serializeBrandAssetForFirestore(asset: BrandAsset): Record<string, unknown> {
+  const safeCategory = VALID_BRAND_ASSET_CATEGORIES.has(asset.category)
+    ? asset.category
+    : 'photo';
+  return {
+    id: sanitizeId(asset.id),
+    titleFa: clamp(asset.titleFa, 280, 'Asset'),
+    titleEn: clamp(asset.titleEn, 280, 'Asset'),
+    category: safeCategory,
+    url: safeImageUrl(asset.url),
+    fileSize: clamp(asset.fileSize, 55, '0 KB'),
+    fileType: clamp(asset.fileType, 95, 'IMAGE'),
+    uploadedAt: clamp(asset.uploadedAt, 115, new Date().toISOString().slice(0, 10)),
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Single-Use Discount Codes (Admin Managed, Point-Get Verified, Batch/Atomic Redeem)
+// -----------------------------------------------------------------------------
+
+export function normalizeDiscountCodeKey(rawCode: string): string {
+  return rawCode
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]/g, '')
+    .slice(0, 64);
+}
+
+function mapDocToDiscountCode(id: string, raw: Record<string, unknown>): DiscountCode {
+  return {
+    id: (raw.id as string) || id,
+    code: (raw.code as string) || id,
+    discountType: raw.discountType === 'fixed' ? 'fixed' : 'percent',
+    discountValue: Number(raw.discountValue) || 0,
+    note: typeof raw.note === 'string' ? raw.note : undefined,
+    isUsed: Boolean(raw.isUsed),
+    createdAt: typeof raw.createdAtLabel === 'string' ? raw.createdAtLabel : '',
+    usedByUid: typeof raw.usedByUid === 'string' ? raw.usedByUid : undefined,
+    usedByName: typeof raw.usedByName === 'string' ? raw.usedByName : undefined,
+    usedByOrderId: typeof raw.usedByOrderId === 'string' ? raw.usedByOrderId : undefined,
+    usedAt: typeof raw.usedAtLabel === 'string' ? raw.usedAtLabel : undefined,
+  };
+}
+
+export function subscribeAdminDiscountCodes(
+  onCodes: (codes: DiscountCode[]) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'discount_codes'),
+    (snap) => {
+      if (!snap.empty) {
+        const list = snap.docs.map((d) =>
+          mapDocToDiscountCode(d.id, d.data() as Record<string, unknown>)
+        );
+        onCodes(list);
+      } else {
+        onCodes([]);
+      }
+    },
+    (error) => handleFirestoreError(error, OperationType.LIST, 'discount_codes')
+  );
+}
+
+export async function verifyDiscountCodeInFirestore(
+  rawCode: string
+): Promise<{ found: boolean; code?: DiscountCode; error?: boolean }> {
+  const codeId = normalizeDiscountCodeKey(rawCode);
+  if (codeId.length < 2) {
+    return { found: false };
+  }
+  try {
+    const snap = await getDoc(doc(db, 'discount_codes', codeId));
+    if (!snap.exists()) {
+      return { found: false };
+    }
+    return {
+      found: true,
+      code: mapDocToDiscountCode(snap.id, snap.data() as Record<string, unknown>),
+    };
+  } catch {
+    return { found: false, error: true };
+  }
+}
+
+export async function upsertDiscountCodeInFirestore(dc: DiscountCode): Promise<void> {
+  const codeId = normalizeDiscountCodeKey(dc.code || dc.id);
+  if (codeId.length < 2) return;
+  const docRef = doc(db, 'discount_codes', codeId);
+  const path = `discount_codes/${codeId}`;
+  const cleanValue =
+    dc.discountType === 'percent'
+      ? Math.min(100, Math.max(1, Math.round(Number(dc.discountValue) || 0)))
+      : Math.min(1000000000, Math.max(1, Math.round(Number(dc.discountValue) || 0)));
+
+  try {
+    const existingSnap = await getDoc(docRef);
+    if (!existingSnap.exists()) {
+      const payload = stripUndefined({
+        id: codeId,
+        code: codeId,
+        discountType: dc.discountType,
+        discountValue: cleanValue,
+        note: dc.note ? clamp(dc.note, 300) : undefined,
+        isUsed: Boolean(dc.isUsed),
+        createdAtLabel: clamp(dc.createdAt, 80),
+        usedByUid: dc.usedByUid ? sanitizeId(dc.usedByUid) : undefined,
+        usedByName: dc.usedByName ? clamp(dc.usedByName, 120) : undefined,
+        usedByOrderId: dc.usedByOrderId ? sanitizeId(dc.usedByOrderId) : undefined,
+        usedAtLabel: dc.usedAt ? clamp(dc.usedAt, 80) : undefined,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await setDoc(docRef, payload);
+    } else {
+      const updatePayload: Record<string, unknown> = {
+        discountType: dc.discountType,
+        discountValue: cleanValue,
+        note: dc.note ? clamp(dc.note, 300) : deleteField(),
+        isUsed: Boolean(dc.isUsed),
+        usedByUid: dc.isUsed && dc.usedByUid ? sanitizeId(dc.usedByUid) : deleteField(),
+        usedByName: dc.isUsed && dc.usedByName ? clamp(dc.usedByName, 120) : deleteField(),
+        usedByOrderId: dc.isUsed && dc.usedByOrderId ? sanitizeId(dc.usedByOrderId) : deleteField(),
+        usedAtLabel: dc.isUsed && dc.usedAt ? clamp(dc.usedAt, 80) : deleteField(),
+        updatedAt: serverTimestamp(),
+      };
+      if (!dc.isUsed) {
+        updatePayload.usedAt = deleteField();
+      }
+      await updateDoc(docRef, updatePayload);
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteDiscountCodeFromFirestore(rawCodeId: string): Promise<void> {
+  const codeId = normalizeDiscountCodeKey(rawCodeId);
+  if (!codeId) return;
+  const path = `discount_codes/${codeId}`;
+  try {
+    await deleteDoc(doc(db, 'discount_codes', codeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function redeemDiscountCodeInFirestore(
+  rawCodeId: string,
+  params: {
+    userId: string;
+    customerName: string;
+    orderId: string;
+    usedAtLabel: string;
+  }
+): Promise<void> {
+  const codeId = normalizeDiscountCodeKey(rawCodeId);
+  if (!codeId) return;
+  const path = `discount_codes/${codeId}`;
+  const docRef = doc(db, 'discount_codes', codeId);
+  try {
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      return;
+    }
+    await updateDoc(docRef, {
+      isUsed: true,
+      usedByUid: sanitizeId(params.userId),
+      usedByName: clamp(params.customerName, 120, 'Customer'),
+      usedByOrderId: sanitizeId(params.orderId),
+      usedAtLabel: clamp(params.usedAtLabel, 80),
+      usedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function syncDiscountCodesToFirestore(codes: DiscountCode[]): Promise<void> {
+  const colRef = collection(db, 'discount_codes');
+  try {
+    const existingSnap = await getDocs(colRef);
+    const existingMap = new Map(existingSnap.docs.map((d) => [d.id, d]));
+    const keepIds = new Set(
+      codes.map((c) => normalizeDiscountCodeKey(c.code || c.id)).filter((id) => id.length >= 2)
+    );
     const batch = writeBatch(db);
 
     existingSnap.docs.forEach((docSnap) => {
@@ -464,132 +1055,56 @@ export async function syncCollectionToFirestore<T extends { id: string }>(
       }
     });
 
-    items.forEach((item, index) => {
-      const safeId = sanitizeId(item.id);
-      const docRef = doc(db, collectionName, safeId);
-      const cleanPayload = stripUndefined({
-        ...mapItem(item, index),
-        id: safeId,
-        updatedAt: serverTimestamp(),
-      });
-      batch.set(docRef, cleanPayload);
+    codes.forEach((dc) => {
+      const codeId = normalizeDiscountCodeKey(dc.code || dc.id);
+      if (codeId.length < 2) return;
+      const docRef = doc(db, 'discount_codes', codeId);
+      const cleanValue =
+        dc.discountType === 'percent'
+          ? Math.min(100, Math.max(1, Math.round(Number(dc.discountValue) || 0)))
+          : Math.min(1000000000, Math.max(1, Math.round(Number(dc.discountValue) || 0)));
+
+      if (!existingMap.has(codeId)) {
+        batch.set(
+          docRef,
+          stripUndefined({
+            id: codeId,
+            code: codeId,
+            discountType: dc.discountType,
+            discountValue: cleanValue,
+            note: dc.note ? clamp(dc.note, 300) : undefined,
+            isUsed: Boolean(dc.isUsed),
+            createdAtLabel: clamp(dc.createdAt, 80),
+            usedByUid: dc.usedByUid ? sanitizeId(dc.usedByUid) : undefined,
+            usedByName: dc.usedByName ? clamp(dc.usedByName, 120) : undefined,
+            usedByOrderId: dc.usedByOrderId ? sanitizeId(dc.usedByOrderId) : undefined,
+            usedAtLabel: dc.usedAt ? clamp(dc.usedAt, 80) : undefined,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      } else {
+        const updatePayload: Record<string, unknown> = {
+          discountType: dc.discountType,
+          discountValue: cleanValue,
+          note: dc.note ? clamp(dc.note, 300) : deleteField(),
+          isUsed: Boolean(dc.isUsed),
+          usedByUid: dc.isUsed && dc.usedByUid ? sanitizeId(dc.usedByUid) : deleteField(),
+          usedByName: dc.isUsed && dc.usedByName ? clamp(dc.usedByName, 120) : deleteField(),
+          usedByOrderId: dc.isUsed && dc.usedByOrderId ? sanitizeId(dc.usedByOrderId) : deleteField(),
+          usedAtLabel: dc.isUsed && dc.usedAt ? clamp(dc.usedAt, 80) : deleteField(),
+          updatedAt: serverTimestamp(),
+        };
+        if (!dc.isUsed) {
+          updatePayload.usedAt = deleteField();
+        }
+        batch.update(docRef, updatePayload);
+      }
     });
 
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, collectionName);
+    handleFirestoreError(error, OperationType.WRITE, 'discount_codes');
   }
 }
 
-export function serializeSlideForFirestore(slide: HeroSlide, order: number): Record<string, unknown> {
-  return {
-    id: sanitizeId(slide.id),
-    order,
-    titleFa: clamp(slide.titleFa, 300),
-    titleEn: clamp(slide.titleEn, 300),
-    highlightFa: clamp(slide.highlightFa, 200),
-    highlightEn: clamp(slide.highlightEn, 200),
-    subtitleFa: clamp(slide.subtitleFa, 800),
-    subtitleEn: clamp(slide.subtitleEn, 800),
-    image: safeImageUrl(slide.image),
-    primaryCtaFa: clamp(slide.primaryCtaFa, 120),
-    primaryCtaEn: clamp(slide.primaryCtaEn, 120),
-    primaryCtaLink: slide.primaryCtaLink ? clamp(slide.primaryCtaLink, 300) : undefined,
-    secondaryCtaFa: clamp(slide.secondaryCtaFa, 120),
-    secondaryCtaEn: clamp(slide.secondaryCtaEn, 120),
-    secondaryCtaLink: slide.secondaryCtaLink ? clamp(slide.secondaryCtaLink, 300) : undefined,
-  };
-}
-
-export function serializeDepartmentForFirestore(dept: Department, order: number): Record<string, unknown> {
-  return {
-    ...dept,
-    id: sanitizeId(dept.id),
-    order,
-    titleFa: clamp(dept.titleFa, 250),
-    titleEn: clamp(dept.titleEn, 250),
-    image: safeImageUrl(dept.image),
-    subCards: (dept.subCards || []).slice(0, 12).map((sc) => ({
-      ...sc,
-      image: safeImageUrl(sc.image, dept.image),
-    })),
-    servicesFa: (dept.servicesFa || []).slice(0, 20),
-    servicesEn: (dept.servicesEn || []).slice(0, 20),
-    statsFa: (dept.statsFa || []).slice(0, 10),
-    statsEn: (dept.statsEn || []).slice(0, 10),
-  };
-}
-
-export function serializeProductForFirestore(product: Product, order: number): Record<string, unknown> {
-  return {
-    ...product,
-    id: sanitizeId(product.id),
-    order,
-    titleFa: clamp(product.titleFa, 250),
-    titleEn: clamp(product.titleEn, 250),
-    brand: clamp(product.brand, 120),
-    model: clamp(product.model, 120),
-    image: safeImageUrl(product.image),
-    specsFa: (product.specsFa || []).slice(0, 30),
-    specsEn: (product.specsEn || []).slice(0, 30),
-    tags: product.tags
-      ? product.tags
-          .map((t) => clamp(t, 60))
-          .filter(Boolean)
-          .slice(0, 12)
-      : undefined,
-    stations: product.stations
-      ? product.stations.slice(0, 10).map((st) => ({
-          ...st,
-          img: safeImageUrl(st.img, product.image),
-        }))
-      : undefined,
-  };
-}
-
-export function serializeMediaForFirestore(item: MediaItem, order: number): Record<string, unknown> {
-  return {
-    ...item,
-    id: sanitizeId(item.id),
-    order,
-    titleFa: clamp(item.titleFa, 300),
-    titleEn: clamp(item.titleEn, 300),
-    image: safeImageUrl(item.image),
-    contentFa: clamp(item.contentFa, 20000),
-    contentEn: clamp(item.contentEn, 20000),
-    isActive: item.isActive !== undefined ? Boolean(item.isActive) : undefined,
-    tags: item.tags
-      ? item.tags
-          .map((t) => clamp(t, 60))
-          .filter(Boolean)
-          .slice(0, 12)
-      : undefined,
-  };
-}
-
-export function serializeCampaignForFirestore(camp: CampaignLanding, order: number): Record<string, unknown> {
-  return {
-    ...camp,
-    id: sanitizeId(camp.id),
-    order,
-    slug: clamp(camp.slug, 150),
-    titleFa: clamp(camp.titleFa, 250),
-    titleEn: clamp(camp.titleEn, 250),
-    heroImage: safeImageUrl(camp.heroImage),
-    highlightsFa: (camp.highlightsFa || []).slice(0, 20),
-    highlightsEn: (camp.highlightsEn || []).slice(0, 20),
-  };
-}
-
-export function serializeBrandAssetForFirestore(asset: BrandAsset): Record<string, unknown> {
-  return {
-    id: sanitizeId(asset.id),
-    titleFa: clamp(asset.titleFa, 200, 'Asset'),
-    titleEn: clamp(asset.titleEn, 200, 'Asset'),
-    category: asset.category,
-    url: safeImageUrl(asset.url),
-    fileSize: clamp(asset.fileSize, 40, '0 KB'),
-    fileType: clamp(asset.fileType, 60, 'IMAGE'),
-    uploadedAt: clamp(asset.uploadedAt, 80),
-  };
-}

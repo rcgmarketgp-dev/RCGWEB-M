@@ -4,10 +4,34 @@ import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const firestoreDatabaseId = (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId;
+export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+export const GMAIL_SCOPES = [
+  'https://mail.google.com/',
+  'https://www.googleapis.com/auth/gmail.addons.current.action.compose',
+  'https://www.googleapis.com/auth/gmail.addons.current.message.action',
+  'https://www.googleapis.com/auth/gmail.addons.current.message.metadata',
+  'https://www.googleapis.com/auth/gmail.addons.current.message.readonly',
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.insert',
+  'https://www.googleapis.com/auth/gmail.labels',
+  'https://www.googleapis.com/auth/gmail.metadata',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.settings.basic',
+  'https://www.googleapis.com/auth/gmail.settings.sharing',
+] as const;
+
+export const gmailGoogleProvider = new GoogleAuthProvider();
+GMAIL_SCOPES.forEach((scope) => {
+  gmailGoogleProvider.addScope(scope);
+});
+gmailGoogleProvider.setCustomParameters({ prompt: 'consent select_account' });
 
 export enum OperationType {
   CREATE = 'create',

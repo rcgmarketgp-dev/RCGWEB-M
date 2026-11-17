@@ -53,7 +53,7 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-60px' }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           className={`text-center max-w-3xl mx-auto ${deptLayout.headerSpacing}`}
         >
@@ -84,7 +84,7 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
                 key={dept.id}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '-50px' }}
+                viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
                 transition={{ duration: 0.55, delay: idx * 0.08, ease: [0.16, 1, 0.3, 1] }}
                 className={`bg-white dark:bg-[#091A42] text-slate-900 dark:text-white rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-blue-900/60 shadow-lg hover:shadow-xl transition-shadow overflow-hidden flex flex-col justify-between ${deptLayout.cardPadding}`}
               >

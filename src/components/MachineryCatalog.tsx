@@ -58,7 +58,7 @@ export const MachineryCatalog: React.FC<MachineryCatalogProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-60px' }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto mb-8 sm:mb-10 space-y-3 sm:space-y-4"
         >
@@ -135,7 +135,7 @@ export const MachineryCatalog: React.FC<MachineryCatalogProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.45, delay: 0.08 }}
           className="flex items-center justify-start sm:justify-center gap-2 overflow-x-auto pb-3 mb-7 sm:mb-10 no-scrollbar"
         >
@@ -183,7 +183,7 @@ export const MachineryCatalog: React.FC<MachineryCatalogProps> = ({
                   key={prod.id}
                   initial={{ opacity: 0, y: 28 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: '-40px' }}
+                  viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
                   transition={{ duration: 0.45, delay: idx * 0.08, ease: [0.16, 1, 0.3, 1] }}
                   whileHover={{ y: -5, transition: { duration: 0.2 } }}
                   className="group bg-white dark:bg-[#091A42]/90 border border-slate-200 dark:border-blue-900/50 hover:border-[#144AE0] dark:hover:border-blue-500/60 rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 flex flex-col justify-between"

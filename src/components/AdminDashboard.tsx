@@ -4,6 +4,8 @@ import {
   Product,
   MediaItem,
   SharpeningOrder,
+  SharpeningPricingConfig,
+  DiscountCode,
   Inquiry,
   SiteSettings,
   Language,
@@ -15,6 +17,8 @@ import {
   Department,
   SiteSectionsConfig,
 } from '../types';
+import { defaultSharpeningPricing } from '../data/initialData';
+import { normalizeDiscountCodeKey } from '../services/firestoreSync';
 import { translations } from '../utils/i18n';
 import {
   ASSET_CATEGORIES,
@@ -27,6 +31,7 @@ import { NavigationManager } from './NavigationManager';
 import { RcgLogo } from './RcgLogo';
 import { GalleryPickerModal } from './GalleryPickerModal';
 import { GoogleBrandIcon } from './GoogleBrandIcon';
+import { GmailWorkspacePanel, GmailComposeSeed } from './GmailWorkspacePanel';
 import { useFirebase } from '../context/FirebaseContext';
 import {
   InstagramBrandIcon,
@@ -80,6 +85,11 @@ import {
   EyeOff,
   Check,
   AlertTriangle,
+  Home,
+  Calculator,
+  Ticket,
+  Percent,
+  RefreshCw,
 } from 'lucide-react';
 import {
   Disc as PhosphorDisc,
@@ -95,6 +105,7 @@ export type AdminTab =
   | 'catalog'
   | 'sharpening'
   | 'inquiries'
+  | 'gmail'
   | 'media'
   | 'assets'
   | 'slides'
@@ -136,6 +147,9 @@ interface AdminDashboardProps {
   onUpdateNavLinks: (links: NavLinkItem[]) => void;
   settings: SiteSettings;
   onUpdateSettings: (settings: SiteSettings) => void;
+  discountCodes: DiscountCode[];
+  onUpsertDiscountCode: (code: DiscountCode) => void;
+  onDeleteDiscountCode: (codeId: string) => void;
   onOpenUiThemePicker?: () => void;
   onPublishAllToCloud?: () => Promise<void>;
   cloudSyncing?: boolean;
@@ -184,14 +198,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateNavLinks,
   settings,
   onUpdateSettings,
+  discountCodes,
+  onUpsertDiscountCode,
+  onDeleteDiscountCode,
   onOpenUiThemePicker,
   onPublishAllToCloud,
   cloudSyncing = false,
   onResetToDefaults,
 }) => {
-  const { user, isAdmin, signInWithGoogle } = useFirebase();
+  const { user, isAdmin, gmailAccessToken, signInWithGoogle } = useFirebase();
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [gmailComposeDraft, setGmailComposeDraft] = useState<GmailComposeSeed | null>(null);
 
   // Catalog filters & batch selection
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -250,6 +268,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [localSettings, setLocalSettings] = useState<SiteSettings>({ ...settings });
   const [settingsLogoMode, setSettingsLogoMode] = useState<'light' | 'dark'>('light');
 
+  // Sharpening Pricing Config & Discount Codes state
+  const [sharpeningSubTab, setSharpeningSubTab] = useState<'orders' | 'pricing' | 'discounts'>('orders');
+  const [pricingDraft, setPricingDraft] = useState<SharpeningPricingConfig>({
+    ...defaultSharpeningPricing,
+    ...(settings.sharpeningPricing || {}),
+    bladeTypeSurchargePercent: {
+      ...defaultSharpeningPricing.bladeTypeSurchargePercent,
+      ...(settings.sharpeningPricing?.bladeTypeSurchargePercent || {}),
+    },
+  });
+  const [discountFilter, setDiscountFilter] = useState<'unused' | 'used' | 'all'>('unused');
+  const [newCodeStr, setNewCodeStr] = useState('');
+  const [newCodeType, setNewCodeType] = useState<'percent' | 'fixed'>('percent');
+  const [newCodeValue, setNewCodeValue] = useState('15');
+  const [newCodeNote, setNewCodeNote] = useState('');
+
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
@@ -258,6 +292,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   useEffect(() => {
     setLocalSettings({ ...settings });
+    setPricingDraft({
+      ...defaultSharpeningPricing,
+      ...(settings.sharpeningPricing || {}),
+      bladeTypeSurchargePercent: {
+        ...defaultSharpeningPricing.bladeTypeSurchargePercent,
+        ...(settings.sharpeningPricing?.bladeTypeSurchargePercent || {}),
+      },
+    });
   }, [settings]);
 
   useEffect(() => {
@@ -1000,6 +1042,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
           )}
 
+          {onOpenUiThemePicker && (
+            <button
+              onClick={onOpenUiThemePicker}
+              className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 min-h-[38px] text-xs font-bold rounded-xl bg-blue-50 hover:bg-[#144AE0] text-[#144AE0] hover:text-white dark:bg-blue-950/70 dark:text-[#A6D6FE] dark:hover:bg-[#144AE0] dark:hover:text-white border border-blue-200 dark:border-blue-800 transition-colors cursor-pointer"
+              title={isRtl ? 'انتخاب تم کلیدها و استایل رابط کاربری' : 'UI & Button Theme Studio'}
+            >
+              <Palette className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden md:inline">
+                {isRtl ? 'تم کلیدها' : 'UI Theme'}
+              </span>
+            </button>
+          )}
+
           {onEnterPageEditMode && (
             <button
               onClick={onEnterPageEditMode}
@@ -1012,7 +1067,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             >
               <MousePointerClick className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden md:inline">
-                {isRtl ? 'حالت تنظیمات صفحه (روی سایت)' : 'Live Page Edit Mode'}
+                {isRtl ? 'تنظیمات صفحه' : 'Page Settings'}
               </span>
             </button>
           )}
@@ -1036,15 +1091,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             title={t.resetDefaults}
           >
             <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">{t.resetDefaults}</span>
+            <span className="hidden xl:inline">{t.resetDefaults}</span>
           </button>
 
           <button
             onClick={onClose}
-            className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 min-h-[38px] text-xs font-bold rounded-xl bg-[#091A42] hover:bg-[#FD5202] dark:bg-slate-800 dark:hover:bg-[#FD5202] text-white transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-1.5 min-h-[38px] text-xs font-bold rounded-xl bg-[#091A42] hover:bg-[#FD5202] dark:bg-[#FD5202] dark:hover:bg-[#E04600] text-white transition-colors cursor-pointer shadow-sm"
           >
-            <X className="w-4 h-4 shrink-0" />
-            <span className="hidden sm:inline">{t.closeBtn}</span>
+            <Home className="w-3.5 h-3.5 shrink-0" />
+            <span>{isRtl ? 'بازگشت به سایت' : 'Back to Site'}</span>
           </button>
         </div>
       </header>
@@ -1053,6 +1108,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Desktop Sidebar */}
         <aside className="hidden md:block w-60 lg:w-64 bg-white dark:bg-[#060F26] border-r rtl:border-r-0 rtl:border-l border-slate-200 dark:border-blue-900/50 p-3.5 space-y-1 shrink-0 overflow-y-auto">
+          <button
+            onClick={onClose}
+            className="w-full flex items-center justify-between px-3.5 py-2.5 mb-2 text-xs font-extrabold rounded-xl bg-slate-100 hover:bg-[#FD5202] text-[#091A42] hover:text-white dark:bg-blue-950/70 dark:text-white dark:hover:bg-[#FD5202] border border-slate-200 dark:border-blue-800/60 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Home className="w-4 h-4 shrink-0" />
+              <span>{isRtl ? 'بازگشت به سایت اصلی' : 'Back to Website'}</span>
+            </div>
+            <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+          </button>
+
           <button onClick={() => setActiveTab('overview')} className={navBtnClass('overview')}>
             <div className="flex items-center gap-2.5">
               <LayoutDashboard className="w-4 h-4 shrink-0" />
@@ -1117,6 +1183,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </span>
           </button>
 
+          <button onClick={() => setActiveTab('gmail')} className={navBtnClass('gmail')}>
+            <div className="flex items-center gap-2.5">
+              <Mail className="w-4 h-4 shrink-0 text-[#FD5202]" />
+              <span>{isRtl ? 'صندوق جیمیل' : 'Gmail Inbox'}</span>
+            </div>
+            {gmailAccessToken && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            )}
+          </button>
+
           <button onClick={() => setActiveTab('media')} className={navBtnClass('media')}>
             <div className="flex items-center gap-2.5">
               <FileText className="w-4 h-4 shrink-0" />
@@ -1157,6 +1233,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <span>{t.tabSettings}</span>
             </div>
           </button>
+
+          {/* Visual Customization Shortcuts inside Admin Sidebar */}
+          <div className="pt-3 mt-3 border-t border-slate-200 dark:border-blue-900/50 space-y-1.5">
+            <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+              {isRtl ? 'ابزارهای ظاهری و صفحه‌آرایی' : 'Visual & Page Controls'}
+            </span>
+            {onEnterPageEditMode && (
+              <button
+                onClick={onEnterPageEditMode}
+                className="w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-bold rounded-xl bg-orange-50/80 hover:bg-[#FD5202] text-[#FD5202] hover:text-white dark:bg-[#FD5202]/15 dark:hover:bg-[#FD5202] border border-orange-200/80 dark:border-[#FD5202]/40 transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  <SlidersHorizontal className="w-4 h-4 shrink-0" />
+                  <span>{isRtl ? 'تنظیمات صفحه (روی سایت)' : 'Page Settings Mode'}</span>
+                </span>
+              </button>
+            )}
+            {onOpenUiThemePicker && (
+              <button
+                onClick={onOpenUiThemePicker}
+                className="w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-bold rounded-xl bg-blue-50/80 hover:bg-[#144AE0] text-[#144AE0] hover:text-white dark:bg-blue-950/60 dark:text-[#A6D6FE] dark:hover:bg-[#144AE0] dark:hover:text-white border border-blue-200/80 dark:border-blue-800/60 transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  <Palette className="w-4 h-4 shrink-0" />
+                  <span>{isRtl ? 'تم کلیدها و رابط کاربری' : 'UI & Button Themes'}</span>
+                </span>
+              </button>
+            )}
+          </div>
         </aside>
 
         {/* Mobile Horizontal Tab Navigation Bar */}
@@ -1168,6 +1273,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'catalog', label: t.tabCatalog, count: products.length },
             { id: 'sharpening', label: t.tabSharpening, count: sharpeningOrders.length },
             { id: 'inquiries', label: t.tabInquiries, count: inquiries.length + campaignInquiries.length },
+            { id: 'gmail', label: isRtl ? 'جیمیل' : 'Gmail' },
             { id: 'media', label: t.tabMedia, count: mediaItems.length },
             { id: 'assets', label: t.tabAssets, count: brandAssets.length },
             { id: 'slides', label: t.tabSlides },
@@ -2193,84 +2299,790 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             );
           })()}
 
-          {/* TAB 4: SHARPENING ORDERS */}
-          {activeTab === 'sharpening' && (
-            <div className="space-y-6 max-w-6xl">
-              <div>
-                <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabSharpening}</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {isRtl ? 'مدیریت سفارش‌های تیزکاری اره الماسه ثبت شده از محاسبه‌گر آنلاین' : 'Manage diamond saw blade sharpening orders'}
-                </p>
-              </div>
+          {/* TAB 4: SHARPENING ORDERS, PRICING FORMULA & DISCOUNT CODES */}
+          {activeTab === 'sharpening' && (() => {
+            const unusedCodes = discountCodes.filter((c) => !c.isUsed);
+            const usedCodes = discountCodes.filter((c) => c.isUsed);
+            const filteredCodes =
+              discountFilter === 'unused'
+                ? unusedCodes
+                : discountFilter === 'used'
+                ? usedCodes
+                : discountCodes;
 
-              <div className="space-y-4">
-                {sharpeningOrders.map((order) => (
-                  <div
-                    key={order.id}
-                    className={`${cardClass} p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}
-                  >
-                    <div className="space-y-1.5 flex-1">
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-                        <span className="font-mono font-bold text-xs sm:text-sm text-[#FD5202] bg-orange-50 dark:bg-orange-950/40 px-2.5 py-0.5 rounded border border-orange-200 dark:border-orange-900/50">
-                          {order.id}
-                        </span>
-                        <h4 className="font-bold text-sm sm:text-base text-[#091A42] dark:text-white">{order.customerName}</h4>
-                        <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">({order.city})</span>
-                        <span className="text-xs text-slate-400 font-mono">· {order.createdAt}</span>
+            const samplePerTooth = Number(pricingDraft.basePricePerTooth) || 0;
+            const sampleSetup = Number(pricingDraft.fixedSetupFeePerBlade) || 0;
+            const sampleTotal96Mdf = Math.round(
+              (96 * samplePerTooth + sampleSetup) *
+                (1 + (Number(pricingDraft.bladeTypeSurchargePercent.mdf) || 0) / 100)
+            );
+
+            const handleSavePricing = (e: React.FormEvent) => {
+              e.preventDefault();
+              const updatedSettings: SiteSettings = {
+                ...settings,
+                sharpeningPricing: pricingDraft,
+              };
+              setLocalSettings(updatedSettings);
+              onUpdateSettings(updatedSettings);
+              showToast(
+                isRtl
+                  ? 'تعرفه و فرمول محاسبه هزینه تیغ اره ذخیره و روی سایت اعمال شد'
+                  : 'Sharpening pricing formula saved'
+              );
+            };
+
+            const handleGenerateRandomCode = () => {
+              const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+              let suffix = '';
+              for (let i = 0; i < 6; i++) {
+                suffix += chars[Math.floor(Math.random() * chars.length)];
+              }
+              setNewCodeStr(`RCG-${suffix}`);
+            };
+
+            const handleAddDiscountCode = (e: React.FormEvent) => {
+              e.preventDefault();
+              const cleanCode = normalizeDiscountCodeKey(newCodeStr);
+              if (cleanCode.length < 2) {
+                showToast(
+                  isRtl
+                    ? 'کد تخفیف باید حداقل ۲ کاراکتر انگلیسی یا عدد باشد'
+                    : 'Code must be at least 2 alphanumeric chars'
+                );
+                return;
+              }
+              if (discountCodes.some((c) => normalizeDiscountCodeKey(c.code) === cleanCode)) {
+                showToast(
+                  isRtl
+                    ? `کد «${cleanCode}» قبلاً در لیست ثبت شده است`
+                    : `Code "${cleanCode}" already exists`
+                );
+                return;
+              }
+              const parsedVal = Math.round(Number(newCodeValue) || 0);
+              if (parsedVal <= 0 || (newCodeType === 'percent' && parsedVal > 100)) {
+                showToast(
+                  isRtl
+                    ? newCodeType === 'percent'
+                      ? 'درصد تخفیف باید بین ۱ تا ۱۰۰ باشد'
+                      : 'مبلغ تخفیف باید بزرگتر از صفر باشد'
+                    : 'Enter a valid discount value'
+                );
+                return;
+              }
+
+              const created: DiscountCode = {
+                id: cleanCode,
+                code: cleanCode,
+                discountType: newCodeType,
+                discountValue: parsedVal,
+                note: newCodeNote.trim() || undefined,
+                isUsed: false,
+                createdAt: new Date().toLocaleDateString(isRtl ? 'fa-IR' : 'en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                }),
+              };
+              onUpsertDiscountCode(created);
+              setNewCodeStr('');
+              setNewCodeNote('');
+              setDiscountFilter('unused');
+              showToast(
+                isRtl
+                  ? `کد تخفیف استفاده نشده «${cleanCode}» ثبت شد`
+                  : `Unused discount code "${cleanCode}" registered`
+              );
+            };
+
+            return (
+              <div className="space-y-6 max-w-6xl">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-slate-200 dark:border-blue-900/40">
+                  <div>
+                    <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabSharpening}</h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {isRtl
+                        ? 'مدیریت سفارش‌ها، تنظیم فرمول تعرفه برآورد هزینه تیغ اره و ثبت کدهای تخفیف یک‌بارمصرف'
+                        : 'Manage sharpening orders, configurable cost formula & single-use discount codes'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSharpeningSubTab('orders')}
+                      className={`px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                        sharpeningSubTab === 'orders'
+                          ? 'bg-[#144AE0] text-white border-[#144AE0] shadow-xs'
+                          : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-blue-800'
+                      }`}
+                    >
+                      <PhosphorDisc weight="duotone" className="w-4 h-4" />
+                      <span>{isRtl ? 'سفارش‌ها' : 'Orders'}</span>
+                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-full bg-black/15 tabular-nums">
+                        {sharpeningOrders.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSharpeningSubTab('pricing')}
+                      className={`px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                        sharpeningSubTab === 'pricing'
+                          ? 'bg-[#FD5202] text-white border-[#FD5202] shadow-xs'
+                          : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-blue-800'
+                      }`}
+                    >
+                      <Calculator className="w-4 h-4" />
+                      <span>{isRtl ? 'تنظیمات برآورد هزینه تیغ اره' : 'Pricing Formula'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSharpeningSubTab('discounts')}
+                      className={`px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                        sharpeningSubTab === 'discounts'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                          : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-blue-800'
+                      }`}
+                    >
+                      <Ticket className="w-4 h-4" />
+                      <span>{isRtl ? 'کدهای تخفیف' : 'Discount Codes'}</span>
+                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-full bg-black/15 tabular-nums">
+                        {unusedCodes.length}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SUB-TAB 1: SHARPENING ORDERS */}
+                {sharpeningSubTab === 'orders' && (
+                  <div className="space-y-4">
+                    {sharpeningOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        className={`${cardClass} p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}
+                      >
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                            <span className="font-mono font-bold text-xs sm:text-sm text-[#FD5202] bg-orange-50 dark:bg-orange-950/40 px-2.5 py-0.5 rounded border border-orange-200 dark:border-orange-900/50">
+                              {order.id}
+                            </span>
+                            <h4 className="font-bold text-sm sm:text-base text-[#091A42] dark:text-white">{order.customerName}</h4>
+                            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">({order.city})</span>
+                            <span className="text-xs text-slate-400 font-mono">· {order.createdAt}</span>
+                          </div>
+
+                          <div className="text-xs text-slate-600 dark:text-slate-300 flex flex-wrap items-center gap-x-4 gap-y-1 pt-1">
+                            <span className="font-mono text-[#144AE0] dark:text-[#A6D6FE] tabular-nums">{isRtl ? 'تلفن:' : 'Phone:'} {order.phone}</span>
+                            <span>{order.bladeType} ({order.diameter})</span>
+                            <span>{order.teethCount}</span>
+                            <span>{order.quantity} {isRtl ? 'عدد' : 'pcs'}</span>
+                            {order.originalPrice && (
+                              <span className="line-through text-slate-400 tabular-nums">{order.originalPrice}</span>
+                            )}
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{order.estimatedPrice}</span>
+                            {order.discountCode && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[11px]">
+                                <Tag className="w-3 h-3" />
+                                {order.discountCode}
+                                {order.discountAmount ? ` (-${order.discountAmount})` : ''}
+                              </span>
+                            )}
+                          </div>
+
+                          {order.notes && (
+                            <p className="text-xs text-amber-800 dark:text-amber-300/90 bg-amber-50 dark:bg-amber-950/20 p-2 rounded-lg border border-amber-200 dark:border-amber-900/40 mt-1">
+                              {order.notes}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'new')}
+                            className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                              order.status === 'new'
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            {t.statusNew}
+                          </button>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'in_progress')}
+                            className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                              order.status === 'in_progress'
+                                ? 'bg-[#144AE0] text-white'
+                                : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            {t.statusInProgress}
+                          </button>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'completed')}
+                            className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                              order.status === 'completed'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            {t.statusCompleted}
+                          </button>
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                )}
 
-                      <div className="text-xs text-slate-600 dark:text-slate-300 flex flex-wrap items-center gap-x-4 gap-y-1 pt-1">
-                        <span className="font-mono text-[#144AE0] dark:text-[#A6D6FE] tabular-nums">{isRtl ? 'تلفن:' : 'Phone:'} {order.phone}</span>
-                        <span>{order.bladeType} ({order.diameter})</span>
-                        <span>{order.teethCount}</span>
-                        <span>{order.quantity} {isRtl ? 'عدد' : 'pcs'}</span>
-                        <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{order.estimatedPrice}</span>
-                      </div>
-
-                      {order.notes && (
-                        <p className="text-xs text-amber-800 dark:text-amber-300/90 bg-amber-50 dark:bg-amber-950/20 p-2 rounded-lg border border-amber-200 dark:border-amber-900/40 mt-1">
-                          {order.notes}
+                {/* SUB-TAB 2: CONFIGURABLE SHARPENING PRICING FORMULA */}
+                {sharpeningSubTab === 'pricing' && (
+                  <form onSubmit={handleSavePricing} className={`${cardClass} p-4 sm:p-6 space-y-6`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-blue-900/50 pb-4">
+                      <div>
+                        <h3 className="text-base font-black text-[#091A42] dark:text-white flex items-center gap-2">
+                          <Calculator className="w-5 h-5 text-[#FD5202]" />
+                          <span>{isRtl ? 'تنظیم تعرفه و پارامترهای برآورد هزینه تیغ اره' : 'Saw Blade Sharpening Tariff Configuration'}</span>
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          {isRtl
+                            ? 'تغییرات بلافاصله در محاسبه‌گر آنلاین صفحه اصلی اعمال می‌شوند.'
+                            : 'Changes take effect immediately in the public online sharpening calculator.'}
                         </p>
+                      </div>
+
+                      <div className="px-4 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-xs">
+                        <span className="text-slate-500 dark:text-slate-300 block text-[10px]">
+                          {isRtl ? 'نمونه برآورد فعلی (تیغ MDF 96 دندانه، استاندارد):' : 'Sample 96T MDF Standard:'}
+                        </span>
+                        <strong className="text-sm font-black text-[#144AE0] dark:text-[#A6D6FE] tabular-nums">
+                          {sampleTotal96Mdf.toLocaleString(isRtl ? 'fa-IR' : 'en-US')} {isRtl ? 'تومان' : 'Toman'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'نرخ پایه هر دندانه (تومان)' : 'Base Price Per Tooth (Toman)'}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={pricingDraft.basePricePerTooth}
+                          onChange={(e) =>
+                            setPricingDraft({ ...pricingDraft, basePricePerTooth: Math.max(0, Number(e.target.value) || 0) })
+                          }
+                          className={`${inputClass} font-mono`}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'هزینه ثابت هر تیغه (تومان)' : 'Fixed Setup Fee / Blade (Toman)'}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={pricingDraft.fixedSetupFeePerBlade}
+                          onChange={(e) =>
+                            setPricingDraft({ ...pricingDraft, fixedSetupFeePerBlade: Math.max(0, Number(e.target.value) || 0) })
+                          }
+                          className={`${inputClass} font-mono`}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'مابه‌التفاوت تعویض دندانه (تومان/دندانه)' : 'Tooth Replacement Extra / Tooth'}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={pricingDraft.teethRepairExtraPerTooth}
+                          onChange={(e) =>
+                            setPricingDraft({ ...pricingDraft, teethRepairExtraPerTooth: Math.max(0, Number(e.target.value) || 0) })
+                          }
+                          className={`${inputClass} font-mono`}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'مابه‌التفاوت بالانس و رفع تاب (تومان/دندانه)' : 'Balancing Extra / Tooth'}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={pricingDraft.balanceExtraPerTooth}
+                          onChange={(e) =>
+                            setPricingDraft({ ...pricingDraft, balanceExtraPerTooth: Math.max(0, Number(e.target.value) || 0) })
+                          }
+                          className={`${inputClass} font-mono`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-3">
+                      <h4 className="text-xs font-extrabold text-[#091A42] dark:text-white">
+                        {isRtl ? 'ضریب تغییر قیمت بر اساس نوع تیغ اره (درصد ٪)' : 'Blade Type Surcharge / Adjustment (%)'}
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                            {isRtl ? 'ام‌دی‌اف و نئوپان (MDF)' : 'MDF / Laminated (%)'}
+                          </label>
+                          <input
+                            type="number"
+                            min={-50}
+                            max={300}
+                            value={pricingDraft.bladeTypeSurchargePercent.mdf}
+                            onChange={(e) =>
+                              setPricingDraft({
+                                ...pricingDraft,
+                                bladeTypeSurchargePercent: {
+                                  ...pricingDraft.bladeTypeSurchargePercent,
+                                  mdf: Number(e.target.value) || 0,
+                                },
+                              })
+                            }
+                            className={`${inputClass} font-mono`}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                            {isRtl ? 'تیغ خط‌زن (Scoring)' : 'Scoring Blade (%)'}
+                          </label>
+                          <input
+                            type="number"
+                            min={-50}
+                            max={300}
+                            value={pricingDraft.bladeTypeSurchargePercent.scoring}
+                            onChange={(e) =>
+                              setPricingDraft({
+                                ...pricingDraft,
+                                bladeTypeSurchargePercent: {
+                                  ...pricingDraft.bladeTypeSurchargePercent,
+                                  scoring: Number(e.target.value) || 0,
+                                },
+                              })
+                            }
+                            className={`${inputClass} font-mono`}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                            {isRtl ? 'چوب طبیعی (Solid Wood)' : 'Solid Wood (%)'}
+                          </label>
+                          <input
+                            type="number"
+                            min={-50}
+                            max={300}
+                            value={pricingDraft.bladeTypeSurchargePercent.solid}
+                            onChange={(e) =>
+                              setPricingDraft({
+                                ...pricingDraft,
+                                bladeTypeSurchargePercent: {
+                                  ...pricingDraft.bladeTypeSurchargePercent,
+                                  solid: Number(e.target.value) || 0,
+                                },
+                              })
+                            }
+                            className={`${inputClass} font-mono`}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                            {isRtl ? 'آلومینیوم / کامپوزیت (Alu)' : 'Aluminum / Composite (%)'}
+                          </label>
+                          <input
+                            type="number"
+                            min={-50}
+                            max={300}
+                            value={pricingDraft.bladeTypeSurchargePercent.alu}
+                            onChange={(e) =>
+                              setPricingDraft({
+                                ...pricingDraft,
+                                bladeTypeSurchargePercent: {
+                                  ...pricingDraft.bladeTypeSurchargePercent,
+                                  alu: Number(e.target.value) || 0,
+                                },
+                              })
+                            }
+                            className={`${inputClass} font-mono`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'زمان تحویل تخمینی (فارسی)' : 'Estimated Turnaround (Fa)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={pricingDraft.turnaroundFa}
+                          onChange={(e) => setPricingDraft({ ...pricingDraft, turnaroundFa: e.target.value })}
+                          className={inputClass}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'زمان تحویل تخمینی (انگلیسی)' : 'Estimated Turnaround (En)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={pricingDraft.turnaroundEn}
+                          onChange={(e) => setPricingDraft({ ...pricingDraft, turnaroundEn: e.target.value })}
+                          className={inputClass}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'نرخ دلار نمایش انگلیسی (تومان)' : 'USD Display Rate (Toman)'}
+                        </label>
+                        <input
+                          type="number"
+                          min={10000}
+                          value={pricingDraft.usdExchangeRate}
+                          onChange={(e) =>
+                            setPricingDraft({ ...pricingDraft, usdExchangeRate: Math.max(1000, Number(e.target.value) || 600000) })
+                          }
+                          className={`${inputClass} font-mono`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'یادداشت زیر مبلغ برآورد (فارسی)' : 'Pricing Footnote (Fa)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={pricingDraft.pricingNoteFa}
+                          onChange={(e) => setPricingDraft({ ...pricingDraft, pricingNoteFa: e.target.value })}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'یادداشت زیر مبلغ برآورد (انگلیسی)' : 'Pricing Footnote (En)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={pricingDraft.pricingNoteEn}
+                          onChange={(e) => setPricingDraft({ ...pricingDraft, pricingNoteEn: e.target.value })}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-blue-900/50">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPricingDraft(defaultSharpeningPricing);
+                          showToast(isRtl ? 'فرمول تعرفه به مقادیر پیش‌فرض بازنشانی شد' : 'Formula reset to defaults');
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-blue-950 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>{isRtl ? 'بازگردانی تعرفه پیش‌فرض' : 'Reset Default Tariff'}</span>
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="flex items-center gap-2 px-6 py-2.5 min-h-[42px] rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold shadow-md cursor-pointer"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>{isRtl ? 'ذخیره و اعمال تعرفه تیزکاری' : 'Save Sharpening Pricing'}</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* SUB-TAB 3: UNUSED / USED DISCOUNT CODES MANAGER */}
+                {sharpeningSubTab === 'discounts' && (
+                  <div className="space-y-6">
+                    {/* Register New Unused Discount Code Form */}
+                    <form onSubmit={handleAddDiscountCode} className={`${cardClass} p-4 sm:p-6 space-y-4`}>
+                      <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-blue-900/50 pb-3">
+                        <div>
+                          <h3 className="text-base font-black text-[#091A42] dark:text-white flex items-center gap-2">
+                            <Ticket className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                            <span>{isRtl ? 'ثبت کد تخفیف استفاده نشده جدید' : 'Register New Unused Discount Code'}</span>
+                          </h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {isRtl
+                              ? 'کدهای ثبت‌شده در این لیست پس از وارد شدن توسط مشتری در بخش برآورد هزینه تیغ اره بررسی و پس از تایید از مبلغ فاکتور کسر می‌شوند.'
+                              : 'Registered unused codes are verified against this list when entered by customers and automatically deducted from sharpening totals.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'کد تخفیف (حروف انگلیسی و عدد)' : 'Discount Code'}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={newCodeStr}
+                              onChange={(e) => setNewCodeStr(e.target.value.toUpperCase())}
+                              dir="ltr"
+                              placeholder="RCG-OFF25"
+                              className={`${inputClass} font-mono uppercase`}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleGenerateRandomCode}
+                              className="px-2.5 min-h-[40px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 text-xs font-bold cursor-pointer shrink-0"
+                              title={isRtl ? 'تولید کد تصادفی' : 'Generate random code'}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-[#144AE0] dark:text-[#A6D6FE]" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'نوع تخفیف' : 'Discount Type'}
+                          </label>
+                          <select
+                            value={newCodeType}
+                            onChange={(e) => setNewCodeType(e.target.value as 'percent' | 'fixed')}
+                            className={inputClass}
+                          >
+                            <option value="percent">{isRtl ? 'درصدی (٪ از مبلغ کل)' : 'Percentage (%)'}</option>
+                            <option value="fixed">{isRtl ? 'مبلغ ثابت (تومان)' : 'Fixed Amount (Toman)'}</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {newCodeType === 'percent'
+                              ? isRtl
+                                ? 'میزان درصد تخفیف (۱ تا ۱۰۰)'
+                                : 'Percentage (1-100)'
+                              : isRtl
+                              ? 'مبلغ تخفیف (تومان)'
+                              : 'Amount (Toman)'}
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={newCodeType === 'percent' ? 100 : 1000000000}
+                            value={newCodeValue}
+                            onChange={(e) => setNewCodeValue(e.target.value)}
+                            className={`${inputClass} font-mono`}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'توضیحات / نام مشتری (اختیاری)' : 'Note / Recipient (Optional)'}
+                          </label>
+                          <input
+                            type="text"
+                            value={newCodeNote}
+                            onChange={(e) => setNewCodeNote(e.target.value)}
+                            placeholder={isRtl ? 'مثال: ویژه کارگاه‌های عضو' : 'e.g. VIP workshop promo'}
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button
+                          type="submit"
+                          className="flex items-center gap-2 px-5 py-2.5 min-h-[42px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>{isRtl ? 'ثبت در لیست کدهای استفاده نشده' : 'Add Unused Discount Code'}</span>
+                        </button>
+                      </div>
+                    </form>
+
+                    {/* Discount Codes List & Status Filter */}
+                    <div className={`${cardClass} p-4 sm:p-6 space-y-4`}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h3 className="text-sm font-black text-[#091A42] dark:text-white">
+                          {isRtl ? 'فهرست کدهای تخفیف ثبت‌شده در پنل مدیریت' : 'Registered Discount Codes'}
+                        </h3>
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setDiscountFilter('unused')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                              discountFilter === 'unused'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-100 dark:bg-blue-950 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {isRtl ? `استفاده نشده (${unusedCodes.length})` : `Unused (${unusedCodes.length})`}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDiscountFilter('used')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                              discountFilter === 'used'
+                                ? 'bg-amber-600 text-white'
+                                : 'bg-slate-100 dark:bg-blue-950 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {isRtl ? `استفاده شده (${usedCodes.length})` : `Used (${usedCodes.length})`}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDiscountFilter('all')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                              discountFilter === 'all'
+                                ? 'bg-[#144AE0] text-white'
+                                : 'bg-slate-100 dark:bg-blue-950 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {isRtl ? `همه (${discountCodes.length})` : `All (${discountCodes.length})`}
+                          </button>
+                        </div>
+                      </div>
+
+                      {filteredCodes.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                          {isRtl
+                            ? 'کد تخفیفی در این دسته وجود ندارد.'
+                            : 'No discount codes found in this category.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {filteredCodes.map((dc) => (
+                            <div
+                              key={dc.id}
+                              className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono font-black text-sm px-2.5 py-1 rounded-lg bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-800 text-[#091A42] dark:text-white tracking-wider">
+                                    {dc.code}
+                                  </span>
+
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] text-xs font-bold tabular-nums">
+                                    {dc.discountType === 'percent' ? (
+                                      <>
+                                        <Percent className="w-3 h-3" />
+                                        <span>
+                                          {dc.discountValue.toLocaleString(isRtl ? 'fa-IR' : 'en-US')}٪ {isRtl ? 'تخفیف' : 'Off'}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span>
+                                        {dc.discountValue.toLocaleString(isRtl ? 'fa-IR' : 'en-US')} {isRtl ? 'تومان کسر مبلغ' : 'Toman Off'}
+                                      </span>
+                                    )}
+                                  </span>
+
+                                  <span
+                                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                                      dc.isUsed
+                                        ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                    }`}
+                                  >
+                                    {dc.isUsed
+                                      ? isRtl
+                                        ? 'استفاده شده'
+                                        : 'Used'
+                                      : isRtl
+                                      ? 'استفاده نشده (معتبر)'
+                                      : 'Unused (Valid)'}
+                                  </span>
+                                </div>
+
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  {dc.note && <span>{dc.note}</span>}
+                                  {dc.createdAt && (
+                                    <span>
+                                      {isRtl ? 'تاریخ ثبت:' : 'Created:'} {dc.createdAt}
+                                    </span>
+                                  )}
+                                  {dc.isUsed && (dc.usedByName || dc.usedByOrderId) && (
+                                    <span className="text-amber-700 dark:text-amber-300 font-semibold">
+                                      {isRtl ? 'مصرف‌شده توسط:' : 'Redeemed by:'} {dc.usedByName || '-'}
+                                      {dc.usedByOrderId ? ` (${dc.usedByOrderId})` : ''}
+                                      {dc.usedAt ? ` · ${dc.usedAt}` : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void navigator.clipboard?.writeText(dc.code);
+                                    showToast(isRtl ? `کد «${dc.code}» کپی شد` : `Copied ${dc.code}`);
+                                  }}
+                                  className="p-2 min-h-[36px] min-w-[36px] rounded-lg bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-800 text-slate-600 dark:text-slate-300 hover:text-[#144AE0] cursor-pointer"
+                                  title={isRtl ? 'کپی کد' : 'Copy Code'}
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+
+                                {dc.isUsed && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onUpsertDiscountCode({
+                                        ...dc,
+                                        isUsed: false,
+                                        usedByUid: undefined,
+                                        usedByName: undefined,
+                                        usedByOrderId: undefined,
+                                        usedAt: undefined,
+                                      });
+                                      showToast(
+                                        isRtl
+                                          ? `کد «${dc.code}» مجدداً به لیست استفاده نشده بازگشت`
+                                          : `Code "${dc.code}" reactivated`
+                                      );
+                                    }}
+                                    className="px-2.5 py-1.5 min-h-[36px] rounded-lg bg-amber-50 hover:bg-amber-500 text-amber-700 hover:text-white dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-xs font-bold cursor-pointer"
+                                  >
+                                    {isRtl ? 'فعال‌سازی مجدد' : 'Reactivate'}
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onDeleteDiscountCode(dc.id || dc.code);
+                                    showToast(isRtl ? `کد «${dc.code}» حذف شد` : `Deleted ${dc.code}`);
+                                  }}
+                                  className="p-2 min-h-[36px] min-w-[36px] rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900 cursor-pointer"
+                                  title={isRtl ? 'حذف کد' : 'Delete Code'}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
-                      <button
-                        onClick={() => handleUpdateOrderStatus(order.id, 'new')}
-                        className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                          order.status === 'new'
-                            ? 'bg-amber-500 text-white'
-                            : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        {t.statusNew}
-                      </button>
-                      <button
-                        onClick={() => handleUpdateOrderStatus(order.id, 'in_progress')}
-                        className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                          order.status === 'in_progress'
-                            ? 'bg-[#144AE0] text-white'
-                            : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        {t.statusInProgress}
-                      </button>
-                      <button
-                        onClick={() => handleUpdateOrderStatus(order.id, 'completed')}
-                        className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                          order.status === 'completed'
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        {t.statusCompleted}
-                      </button>
-                    </div>
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 5: CLIENT INQUIRIES */}
           {activeTab === 'inquiries' && (
@@ -2332,17 +3144,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                       </div>
 
-                      <a
-                        href={`tel:${inq.phone}`}
-                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                        <span>{isRtl ? 'تماس تلفنی' : 'Call'}</span>
-                      </a>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGmailComposeDraft({
+                              to: inq.email || '',
+                              subject: isRtl ? `پاسخ: ${inq.subject}` : `Re: ${inq.subject}`,
+                              body: isRtl
+                                ? `سلام ${inq.name} گرامی،\n\nدر پاسخ به درخواست شما در دپارتمان «${inq.department}»:\n\n`
+                                : `Dear ${inq.name},\n\nThank you for contacting RCG (${inq.department}) regarding "${inq.subject}".\n\n`,
+                            });
+                            setActiveTab('gmail');
+                          }}
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-lg bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'پاسخ با جیمیل' : 'Reply via Gmail'}</span>
+                        </button>
+
+                        <a
+                          href={`tel:${inq.phone}`}
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'تماس تلفنی' : 'Call'}</span>
+                        </a>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* TAB 5B: GMAIL WORKSPACE */}
+          {activeTab === 'gmail' && (
+            <div className="space-y-4 max-w-6xl">
+              <div>
+                <h2 className="text-lg sm:text-xl font-extrabold text-[#091A42] dark:text-white">
+                  {isRtl ? 'مدیریت صندوق جیمیل (Gmail)' : 'Gmail Mailbox & Client Correspondence'}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {isRtl
+                    ? 'خواندن پیام‌ها، جستجو، مدیریت برچسب‌ها و پاسخ مستقیم به مشتریان از طریق جیمیل'
+                    : 'Read inbox messages, search threads, manage labels, and reply to inquiries directly via Gmail'}
+                </p>
+              </div>
+              <GmailWorkspacePanel
+                language={language}
+                initialCompose={gmailComposeDraft}
+                onClearInitialCompose={() => setGmailComposeDraft(null)}
+              />
             </div>
           )}
 
@@ -3616,19 +4469,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </p>
                 </div>
 
-                {onOpenUiThemePicker && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenUiThemePicker();
-                    }}
-                    className="rcg-btn-primary flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold shadow-md cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>{isRtl ? 'باز کردن استودیو تم کلیدها و رابط کاربری' : 'Open UI & Button Theme Studio'}</span>
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {onEnterPageEditMode && (
+                    <button
+                      type="button"
+                      onClick={onEnterPageEditMode}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-50 hover:bg-[#144AE0] text-[#144AE0] hover:text-white dark:bg-blue-950/70 dark:text-[#A6D6FE] dark:hover:bg-[#144AE0] dark:hover:text-white border border-blue-200 dark:border-blue-800 text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                      <span>{isRtl ? 'تنظیمات صفحه (ویرایش روی سایت)' : 'Page Settings Mode'}</span>
+                    </button>
+                  )}
+
+                  {onOpenUiThemePicker && (
+                    <button
+                      type="button"
+                      onClick={onOpenUiThemePicker}
+                      className="rcg-btn-primary flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold shadow-md cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span>{isRtl ? 'باز کردن استودیو تم کلیدها و رابط کاربری' : 'Open UI & Button Theme Studio'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <form onSubmit={handleSaveSettings} className={`${cardClass} p-4 sm:p-6 space-y-5 sm:space-y-6`}>

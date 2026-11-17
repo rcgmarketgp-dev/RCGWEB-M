@@ -11,6 +11,7 @@ import {
   Product,
   MediaItem,
   SharpeningOrder,
+  DiscountCode,
   Inquiry,
   SiteSettings,
   CampaignLanding,
@@ -26,6 +27,7 @@ import {
   initialProducts,
   initialMedia,
   initialSharpeningOrders,
+  initialDiscountCodes,
   initialInquiries,
   initialSiteSettings,
   initialCampaigns,
@@ -36,7 +38,7 @@ import {
 } from './data/initialData';
 
 import {
-  BOOTSTRAPPED_ADMIN_EMAIL,
+  isBootstrappedAdminEmail,
   FirebaseProvider,
   useFirebase,
 } from './context/FirebaseContext';
@@ -45,19 +47,25 @@ import {
   createCampaignInquiryInFirestore,
   createInquiryInFirestore,
   createSharpeningOrderInFirestore,
+  deleteDiscountCodeFromFirestore,
+  redeemDiscountCodeInFirestore,
   serializeBrandAssetForFirestore,
   serializeCampaignForFirestore,
   serializeDepartmentForFirestore,
   serializeMediaForFirestore,
   serializeProductForFirestore,
   serializeSlideForFirestore,
+  subscribeAdminDiscountCodes,
   subscribeCustomerRecords,
   subscribePublicCmsStorefront,
   syncCollectionToFirestore,
+  syncDiscountCodesToFirestore,
   syncSiteConfigToFirestore,
   updateCampaignInquiryInFirestore,
   updateInquiryStatusInFirestore,
   updateSharpeningOrderInFirestore,
+  upsertBrandAssetInFirestore,
+  upsertDiscountCodeInFirestore,
 } from './services/firestoreSync';
 
 import { Navbar } from './components/Navbar';
@@ -73,12 +81,13 @@ import { Footer } from './components/Footer';
 import { AdminDashboard, AdminTab } from './components/AdminDashboard';
 import { ConsultationModal } from './components/ConsultationModal';
 import { CampaignLandingModal } from './components/CampaignLandingModal';
-import { UserPortalModal } from './components/UserPortalModal';
+import { UserPortalModal, UserPortalTab } from './components/UserPortalModal';
 import { ScrollProgressBar } from './components/ScrollProgressBar';
 import { EditableSectionWrapper } from './components/EditableSectionWrapper';
 import { SectionEditorModal } from './components/SectionEditorModal';
 import { UiThemePickerModal } from './components/UiThemePickerModal';
 import { applyUiThemeToDocument } from './utils/uiThemes';
+import { MotionConfig } from 'motion/react';
 import { MousePointerClick, Shield, Palette, X, CheckCircle2, Undo2 } from 'lucide-react';
 
 interface AppContentProps {
@@ -94,7 +103,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     authReady &&
       user &&
       user.emailVerified &&
-      user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase() &&
+      isBootstrappedAdminEmail(user.email) &&
       isAdmin
   );
 
@@ -103,6 +112,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const [adminInitialTab, setAdminInitialTab] = useState<AdminTab>('overview');
   const [isConsultationOpen, setIsConsultationOpen] = useState(false);
   const [isUserPortalOpen, setIsUserPortalOpen] = useState(false);
+  const [userPortalInitialTab, setUserPortalInitialTab] = useState<UserPortalTab>('orders');
   const [isUiThemePickerOpen, setIsUiThemePickerOpen] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [consultationPrefill, setConsultationPrefill] = useState<{ dept?: string; subject?: string }>({});
@@ -141,23 +151,6 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     if (!canAccessAdmin) return;
     setAdminInitialTab(tab);
     setIsAdminOpen(true);
-  };
-
-  const handleTogglePageEditMode = () => {
-    if (!canAccessAdmin) return;
-    setIsPageEditMode((prev) => {
-      const next = !prev;
-      if (next) {
-        showPageToast(
-          language === 'fa'
-            ? 'حالت تنظیمات صفحه فعال شد — روی هر بخش سایت کلیک کنید'
-            : 'Page Edit Mode active — click any section on the page to customize it'
-        );
-      } else {
-        setActiveEditSection(null);
-      }
-      return next;
-    });
   };
 
   const handleEnterPageEditFromAdmin = () => {
@@ -199,6 +192,18 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const [sharpeningOrders, setSharpeningOrders] = useState<SharpeningOrder[]>(() => {
     const saved = localStorage.getItem('rcg_sharpening_orders');
     return saved ? JSON.parse(saved) : initialSharpeningOrders;
+  });
+
+  const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>(() => {
+    const saved = localStorage.getItem('rcg_discount_codes');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return initialDiscountCodes;
+      }
+    }
+    return initialDiscountCodes;
   });
 
   const [inquiries, setInquiries] = useState<Inquiry[]>(() => {
@@ -270,9 +275,11 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const prevOrdersRef = useRef<SharpeningOrder[]>(sharpeningOrders);
   const prevInquiriesRef = useRef<Inquiry[]>(inquiries);
   const prevCampInquiriesRef = useRef<CampaignInquiry[]>(campaignInquiries);
+  const brandAssetsRef = useRef<BrandAsset[]>(brandAssets);
   prevOrdersRef.current = sharpeningOrders;
   prevInquiriesRef.current = inquiries;
   prevCampInquiriesRef.current = campaignInquiries;
+  brandAssetsRef.current = brandAssets;
 
   // Subscribe to public Firestore CMS storefront data
   useEffect(() => {
@@ -322,7 +329,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   // Subscribe to authenticated user-scoped (or bootstrapped admin-all) Firestore customer records
   useEffect(() => {
     if (!authReady || !user || !user.emailVerified) return;
-    const isSuperListAdmin = user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase();
+    const isSuperListAdmin = isBootstrappedAdminEmail(user.email);
     const unsubscribe = subscribeCustomerRecords(user.uid, isSuperListAdmin, {
       onOrders: (cloudOrders) => {
         if (cloudOrders.length > 0 || isSuperListAdmin) {
@@ -346,6 +353,18 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     return () => unsubscribe();
   }, [authReady, user]);
 
+  // Subscribe to Admin Discount Codes Registry in Firestore
+  useEffect(() => {
+    if (!canAccessAdmin) return;
+    const unsubscribe = subscribeAdminDiscountCodes((cloudCodes) => {
+      if (cloudCodes.length > 0) {
+        setDiscountCodes(cloudCodes);
+        localStorage.setItem('rcg_discount_codes', JSON.stringify(cloudCodes));
+      }
+    });
+    return () => unsubscribe();
+  }, [canAccessAdmin]);
+
   // Language & Theme handlers with Firestore preference sync
   const handleLanguageChange = (nextLang: Language) => {
     setLanguage(nextLang);
@@ -364,7 +383,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const handleUpdateSlides = (newSlides: HeroSlide[]) => {
     setHeroSlides(newSlides);
     localStorage.setItem('rcg_slides', JSON.stringify(newSlides));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       void syncCollectionToFirestore('hero_slides', newSlides, serializeSlideForFirestore);
     }
   };
@@ -372,7 +391,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const handleUpdateDepartments = (newDepts: Department[]) => {
     setDepartments(newDepts);
     localStorage.setItem('rcg_departments', JSON.stringify(newDepts));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       void syncCollectionToFirestore('departments', newDepts, serializeDepartmentForFirestore);
     }
   };
@@ -380,7 +399,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const handleUpdateProducts = (newProducts: Product[]) => {
     setProducts(newProducts);
     localStorage.setItem('rcg_products', JSON.stringify(newProducts));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       void syncCollectionToFirestore('products', newProducts, serializeProductForFirestore);
     }
   };
@@ -389,7 +408,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     const prev = prevOrdersRef.current;
     setSharpeningOrders(newOrders);
     localStorage.setItem('rcg_sharpening_orders', JSON.stringify(newOrders));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       newOrders.forEach((o) => {
         const old = prev.find((p) => p.id === o.id);
         if (old && (old.status !== o.status || old.notes !== o.notes)) {
@@ -403,7 +422,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     const prev = prevInquiriesRef.current;
     setInquiries(newInquiries);
     localStorage.setItem('rcg_inquiries', JSON.stringify(newInquiries));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       newInquiries.forEach((inq) => {
         const old = prev.find((p) => p.id === inq.id);
         if (old && old.status !== inq.status) {
@@ -416,7 +435,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const handleUpdateMediaItems = (newItems: MediaItem[]) => {
     setMediaItems(newItems);
     localStorage.setItem('rcg_media', JSON.stringify(newItems));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       void syncCollectionToFirestore('media_items', newItems, serializeMediaForFirestore);
     }
   };
@@ -436,7 +455,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const handleUpdateCampaigns = (newCampaigns: CampaignLanding[]) => {
     setCampaigns(newCampaigns);
     localStorage.setItem('rcg_campaigns', JSON.stringify(newCampaigns));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       void syncCollectionToFirestore('campaigns', newCampaigns, serializeCampaignForFirestore);
     }
   };
@@ -445,7 +464,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     const prev = prevCampInquiriesRef.current;
     setCampaignInquiries(newInqs);
     localStorage.setItem('rcg_campaign_inquiries', JSON.stringify(newInqs));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       newInqs.forEach((ci) => {
         const old = prev.find((p) => p.id === ci.id);
         if (old && (old.status !== ci.status || old.notes !== ci.notes)) {
@@ -456,45 +475,48 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   };
 
   const handleUpdateBrandAssets = (newAssets: BrandAsset[]) => {
+    brandAssetsRef.current = newAssets;
     setBrandAssets(newAssets);
     localStorage.setItem('rcg_brand_assets', JSON.stringify(newAssets));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       void syncCollectionToFirestore('brand_assets', newAssets, serializeBrandAssetForFirestore);
     }
   };
 
   const handleArchiveAsset = (asset: Omit<BrandAsset, 'id' | 'uploadedAt'>) => {
-    setBrandAssets((prev) => {
-      const existingIndex = prev.findIndex((a) => a.url === asset.url);
-      let next: BrandAsset[];
-      if (existingIndex >= 0) {
-        const existing = prev[existingIndex];
-        if (existing.category === asset.category) {
-          return prev;
-        }
-        next = prev.map((a, idx) =>
-          idx === existingIndex ? { ...a, category: asset.category } : a
-        );
-      } else {
-        const created: BrandAsset = {
-          ...asset,
-          id: `asset-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          uploadedAt: new Date().toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US'),
-        };
-        next = [created, ...prev];
+    const current = brandAssetsRef.current;
+    const existingIndex = current.findIndex((a) => a.url === asset.url);
+    let next: BrandAsset[];
+    let targetAsset: BrandAsset;
+
+    if (existingIndex >= 0) {
+      const existing = current[existingIndex];
+      if (existing.category === asset.category) {
+        return;
       }
-      localStorage.setItem('rcg_brand_assets', JSON.stringify(next));
-      if (isAdmin && user) {
-        void syncCollectionToFirestore('brand_assets', next, serializeBrandAssetForFirestore);
-      }
-      return next;
-    });
+      targetAsset = { ...existing, category: asset.category };
+      next = current.map((a, idx) => (idx === existingIndex ? targetAsset : a));
+    } else {
+      targetAsset = {
+        ...asset,
+        id: `asset-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        uploadedAt: new Date().toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US'),
+      };
+      next = [targetAsset, ...current];
+    }
+
+    brandAssetsRef.current = next;
+    setBrandAssets(next);
+    localStorage.setItem('rcg_brand_assets', JSON.stringify(next));
+    if (canAccessAdmin && user) {
+      void upsertBrandAssetInFirestore(targetAsset);
+    }
   };
 
   const handleUpdateNavLinks = (newLinks: NavLinkItem[]) => {
     setNavLinks(newLinks);
     localStorage.setItem('rcg_nav_links', JSON.stringify(newLinks));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       void syncSiteConfigToFirestore('navigation', { links: newLinks }, user.uid);
     }
   };
@@ -502,7 +524,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   const handleUpdateSectionsConfig = (newConfig: SiteSectionsConfig) => {
     setSectionsConfig(newConfig);
     localStorage.setItem('rcg_section_configs', JSON.stringify(newConfig));
-    if (isAdmin && user) {
+    if (canAccessAdmin && user) {
       void syncSiteConfigToFirestore(
         'sections',
         newConfig as unknown as Record<string, unknown>,
@@ -576,8 +598,33 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     );
   };
 
+  const handleUpsertDiscountCode = (dc: DiscountCode) => {
+    setDiscountCodes((prev) => {
+      const exists = prev.some((c) => c.code === dc.code || c.id === dc.id);
+      const next = exists
+        ? prev.map((c) => (c.code === dc.code || c.id === dc.id ? dc : c))
+        : [dc, ...prev];
+      localStorage.setItem('rcg_discount_codes', JSON.stringify(next));
+      return next;
+    });
+    if (canAccessAdmin && user) {
+      void upsertDiscountCodeInFirestore(dc);
+    }
+  };
+
+  const handleDeleteDiscountCode = (codeId: string) => {
+    setDiscountCodes((prev) => {
+      const next = prev.filter((c) => c.id !== codeId && c.code !== codeId);
+      localStorage.setItem('rcg_discount_codes', JSON.stringify(next));
+      return next;
+    });
+    if (canAccessAdmin && user) {
+      void deleteDiscountCodeFromFirestore(codeId);
+    }
+  };
+
   const handlePublishAllToCloud = async () => {
-    if (!isAdmin || !user) return;
+    if (!canAccessAdmin || !user) return;
     setCloudSyncing(true);
     try {
       await Promise.all([
@@ -598,6 +645,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
         syncCollectionToFirestore('media_items', mediaItems, serializeMediaForFirestore),
         syncCollectionToFirestore('campaigns', campaigns, serializeCampaignForFirestore),
         syncCollectionToFirestore('brand_assets', brandAssets, serializeBrandAssetForFirestore),
+        syncDiscountCodesToFirestore(discountCodes),
       ]);
     } finally {
       setCloudSyncing(false);
@@ -609,6 +657,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     localStorage.removeItem('rcg_departments');
     localStorage.removeItem('rcg_products');
     localStorage.removeItem('rcg_sharpening_orders');
+    localStorage.removeItem('rcg_discount_codes');
     localStorage.removeItem('rcg_inquiries');
     localStorage.removeItem('rcg_media');
     localStorage.removeItem('rcg_settings');
@@ -622,6 +671,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
     setDepartments(initialDepartments);
     setProducts(initialProducts);
     setSharpeningOrders(initialSharpeningOrders);
+    setDiscountCodes(initialDiscountCodes);
     setInquiries(initialInquiries);
     setMediaItems(initialMedia);
     setSiteSettings(initialSiteSettings);
@@ -633,11 +683,40 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
   };
 
   // Authenticated Customer Actions -> Firestore + Local State
-  const handleNewOrderCreated = (order: SharpeningOrder) => {
+  const handleNewOrderCreated = (order: SharpeningOrder, appliedDiscount?: DiscountCode) => {
     const next = [order, ...sharpeningOrders];
     setSharpeningOrders(next);
     localStorage.setItem('rcg_sharpening_orders', JSON.stringify(next));
     const activeUid = auth.currentUser?.uid || user?.uid;
+
+    if (appliedDiscount) {
+      setDiscountCodes((prev) => {
+        const updatedCodes = prev.map((c) =>
+          c.code === appliedDiscount.code || c.id === appliedDiscount.id
+            ? {
+                ...c,
+                isUsed: true,
+                usedByUid: activeUid,
+                usedByName: order.customerName,
+                usedByOrderId: order.id,
+                usedAt: order.createdAt,
+              }
+            : c
+        );
+        localStorage.setItem('rcg_discount_codes', JSON.stringify(updatedCodes));
+        return updatedCodes;
+      });
+
+      if (activeUid) {
+        void redeemDiscountCodeInFirestore(appliedDiscount.code || appliedDiscount.id, {
+          userId: activeUid,
+          customerName: order.customerName,
+          orderId: order.id,
+          usedAtLabel: order.createdAt,
+        });
+      }
+    }
+
     if (activeUid) {
       void createSharpeningOrderInFirestore(activeUid, order);
     }
@@ -698,14 +777,15 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
         onLanguageChange={handleLanguageChange}
         isDark={isDark}
         onThemeToggle={handleThemeToggle}
-        onOpenUiThemePicker={canAccessAdmin ? () => setIsUiThemePickerOpen(true) : undefined}
         navLinks={navLinks}
         settings={siteSettings}
         isPageEditMode={canAccessAdmin && isPageEditMode}
-        onTogglePageEditMode={canAccessAdmin ? handleTogglePageEditMode : undefined}
         onEditHeaderSection={canAccessAdmin ? () => setActiveEditSection('header') : undefined}
         onOpenAdmin={canAccessAdmin ? () => handleOpenAdminWithTab('overview') : undefined}
-        onOpenUserPortal={() => setIsUserPortalOpen(true)}
+        onOpenUserPortal={() => {
+          setUserPortalInitialTab('orders');
+          setIsUserPortalOpen(true);
+        }}
         onOpenContactModal={() => {
           setConsultationPrefill({});
           setIsConsultationOpen(true);
@@ -720,6 +800,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           labelEn="Hero Section"
           isEditMode={canAccessAdmin && isPageEditMode}
           language={language}
+          uiInteraction={siteSettings.uiInteraction}
           onEditSection={setActiveEditSection}
         >
           <Hero
@@ -749,6 +830,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           labelEn="Departments"
           isEditMode={canAccessAdmin && isPageEditMode}
           language={language}
+          uiInteraction={siteSettings.uiInteraction}
           onEditSection={setActiveEditSection}
         >
           <DepartmentsSection
@@ -768,6 +850,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           labelEn="Machinery Catalog"
           isEditMode={canAccessAdmin && isPageEditMode}
           language={language}
+          uiInteraction={siteSettings.uiInteraction}
           onEditSection={setActiveEditSection}
         >
           <MachineryCatalog
@@ -788,6 +871,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           labelEn="Campaigns"
           isEditMode={canAccessAdmin && isPageEditMode}
           language={language}
+          uiInteraction={siteSettings.uiInteraction}
           onEditSection={setActiveEditSection}
         >
           <CampaignsSection
@@ -806,12 +890,14 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           labelEn="Sharpening Calculator"
           isEditMode={canAccessAdmin && isPageEditMode}
           language={language}
+          uiInteraction={siteSettings.uiInteraction}
           onEditSection={setActiveEditSection}
         >
           <SharpeningCalculator
             language={language}
             settings={siteSettings}
             sectionConfig={sectionsConfig.calculator}
+            discountCodes={discountCodes}
             onOrderCreated={handleNewOrderCreated}
           />
         </EditableSectionWrapper>
@@ -823,6 +909,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           labelEn="Media Center"
           isEditMode={canAccessAdmin && isPageEditMode}
           language={language}
+          uiInteraction={siteSettings.uiInteraction}
           onEditSection={setActiveEditSection}
         >
           <MediaCenter
@@ -839,6 +926,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           labelEn="About RCG"
           isEditMode={canAccessAdmin && isPageEditMode}
           language={language}
+          uiInteraction={siteSettings.uiInteraction}
           onEditSection={setActiveEditSection}
         >
           <AboutSection
@@ -861,6 +949,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           labelEn="Contact Section"
           isEditMode={canAccessAdmin && isPageEditMode}
           language={language}
+          uiInteraction={siteSettings.uiInteraction}
           onEditSection={setActiveEditSection}
         >
           <ContactSection
@@ -881,6 +970,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
         labelEn="Footer"
         isEditMode={canAccessAdmin && isPageEditMode}
         language={language}
+        uiInteraction={siteSettings.uiInteraction}
         onEditSection={setActiveEditSection}
       >
         <Footer
@@ -1036,6 +1126,9 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           onUpdateNavLinks={handleUpdateNavLinks}
           settings={siteSettings}
           onUpdateSettings={handleUpdateSettings}
+          discountCodes={discountCodes}
+          onUpsertDiscountCode={handleUpsertDiscountCode}
+          onDeleteDiscountCode={handleDeleteDiscountCode}
           onOpenUiThemePicker={() => setIsUiThemePickerOpen(true)}
           onPublishAllToCloud={handlePublishAllToCloud}
           cloudSyncing={cloudSyncing}
@@ -1076,6 +1169,7 @@ function AppContent({ language, setLanguage, isDark, setIsDark }: AppContentProp
           isOpen={isUserPortalOpen}
           onClose={() => setIsUserPortalOpen(false)}
           language={language}
+          initialTab={userPortalInitialTab}
           sharpeningOrders={sharpeningOrders}
           inquiries={inquiries}
           campaignInquiries={campaignInquiries}
@@ -1136,12 +1230,14 @@ export default function App() {
         setIsDark(prefTheme === 'dark');
       }}
     >
-      <AppContent
-        language={language}
-        setLanguage={setLanguage}
-        isDark={isDark}
-        setIsDark={setIsDark}
-      />
+      <MotionConfig reducedMotion="user">
+        <AppContent
+          language={language}
+          setLanguage={setLanguage}
+          isDark={isDark}
+          setIsDark={setIsDark}
+        />
+      </MotionConfig>
     </FirebaseProvider>
   );
 }

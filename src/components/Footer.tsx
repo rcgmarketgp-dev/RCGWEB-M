@@ -3,6 +3,7 @@ import { Language, SiteSettings, NavLinkItem } from '../types';
 import { translations } from '../utils/i18n';
 import { RcgLogo } from './RcgLogo';
 import { Phone, Mail, MapPin, ArrowUp } from 'lucide-react';
+import { motion } from 'motion/react';
 import {
   InstagramBrandIcon,
   LinkedInBrandIcon,
@@ -42,6 +43,8 @@ export const Footer: React.FC<FooterProps> = ({ settings, isDark = false, langua
     ? sectionConfig?.ctaTextFa || 'بازگشت به بالا'
     : sectionConfig?.ctaTextEn || 'Back to Top';
 
+  const ease = [0.16, 1, 0.3, 1] as const;
+
   return (
     <footer className="bg-[#091A42] dark:bg-[#050C1F] text-slate-300 border-t border-blue-900/60 dark:border-blue-950 pt-12 pb-10 sm:pt-16 sm:pb-12 relative overflow-hidden">
       {/* Background Triangles Pattern */}
@@ -51,7 +54,13 @@ export const Footer: React.FC<FooterProps> = ({ settings, isDark = false, langua
         {/* Main Footer Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 sm:gap-10 pb-8 sm:pb-12 border-b border-blue-800/50 dark:border-blue-950">
           {/* Brand Column */}
-          <div className="lg:col-span-5 space-y-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 'some' }}
+            transition={{ duration: 0.5, ease }}
+            className="lg:col-span-5 space-y-4"
+          >
             <div className="cursor-pointer inline-block max-w-full" onClick={scrollToTop}>
               <RcgLogo
                 settings={settings}
@@ -109,10 +118,16 @@ export const Footer: React.FC<FooterProps> = ({ settings, isDark = false, langua
                 <WhatsAppBrandIcon className="w-4 h-4" />
               </a>
             </div>
-          </div>
+          </motion.div>
 
           {/* Quick Links Column */}
-          <div className="lg:col-span-3 space-y-3">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 'some' }}
+            transition={{ duration: 0.5, delay: 0.08, ease }}
+            className="lg:col-span-3 space-y-3"
+          >
             <h4 className="text-sm font-bold text-white uppercase tracking-wider">
               {t.quickLinks}
             </h4>
@@ -132,10 +147,16 @@ export const Footer: React.FC<FooterProps> = ({ settings, isDark = false, langua
                 </li>
               ))}
             </ul>
-          </div>
+          </motion.div>
 
           {/* Official Northern Iran Regional Coverage */}
-          <div className="lg:col-span-4 space-y-3">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 'some' }}
+            transition={{ duration: 0.5, delay: 0.16, ease }}
+            className="lg:col-span-4 space-y-3"
+          >
             <h4 className="text-sm font-bold text-white uppercase tracking-wider">
               {isRtl ? 'دفاتر و شبکه خدمات پس از فروش' : 'Showroom & Field Network'}
             </h4>
@@ -163,11 +184,17 @@ export const Footer: React.FC<FooterProps> = ({ settings, isDark = false, langua
                 {dealerBadgeText}
               </span>
             </div>
-          </div>
+          </motion.div>
         </div>
 
         {/* Bottom Bar */}
-        <div className="pt-6 sm:pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 text-center sm:text-start">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 'some' }}
+          transition={{ duration: 0.45, delay: 0.2, ease }}
+          className="pt-6 sm:pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 text-center sm:text-start"
+        >
           <p>{t.rights}</p>
 
           <button
@@ -177,7 +204,7 @@ export const Footer: React.FC<FooterProps> = ({ settings, isDark = false, langua
             <span>{topButtonText}</span>
             <ArrowUp className="w-3.5 h-3.5 text-[#FD5202]" />
           </button>
-        </div>
+        </motion.div>
       </div>
     </footer>
   );

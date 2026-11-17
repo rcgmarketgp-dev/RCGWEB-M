@@ -1,4 +1,15 @@
-import { Department, Product, MediaItem, SharpeningOrder, Inquiry, HeroSlide, SiteSettings, SiteSectionsConfig } from '../types';
+import {
+  Department,
+  DiscountCode,
+  Product,
+  MediaItem,
+  SharpeningOrder,
+  SharpeningPricingConfig,
+  Inquiry,
+  HeroSlide,
+  SiteSettings,
+  SiteSectionsConfig,
+} from '../types';
 
 export const initialHeroSlides: HeroSlide[] = [
   {
@@ -699,7 +710,47 @@ export const initialSiteSettings: SiteSettings = {
   externalIconPack: 'lucide-default',
   externalCtaIcon: '',
   externalFontEn: 'Plus Jakarta Sans',
+  sharpeningPricing: {
+    basePricePerTooth: 3500,
+    fixedSetupFeePerBlade: 40000,
+    teethRepairExtraPerTooth: 2500,
+    balanceExtraPerTooth: 1500,
+    bladeTypeSurchargePercent: {
+      mdf: 0,
+      scoring: 0,
+      solid: 0,
+      alu: 0,
+    },
+    usdExchangeRate: 600000,
+    turnaroundFa: '۲۴ الی ۴۸ ساعت کاری',
+    turnaroundEn: '24 to 48 Business Hours',
+    pricingNoteFa: 'قیمت بر اساس تعرفه مصوب و تیپ دندانه کارباید',
+    pricingNoteEn: 'Official standardized pricing',
+  },
 };
+
+export const defaultSharpeningPricing: SharpeningPricingConfig = initialSiteSettings.sharpeningPricing!;
+
+export const initialDiscountCodes: DiscountCode[] = [
+  {
+    id: 'RCG-OFF20',
+    code: 'RCG-OFF20',
+    discountType: 'percent',
+    discountValue: 20,
+    note: 'کد تخفیف ۲۰٪ ویژه اولین سفارش تیزکاری اره الماسه',
+    isUsed: false,
+    createdAt: '۱۴۰۳/۰۸/۰۱',
+  },
+  {
+    id: 'RCG-100K',
+    code: 'RCG-100K',
+    discountType: 'fixed',
+    discountValue: 100000,
+    note: 'کد هدیه ۱۰۰,۰۰۰ تومانی خدمات تیزکاری آرسی',
+    isUsed: false,
+    createdAt: '۱۴۰۳/۰۸/۰۵',
+  },
+];
 
 export const initialCampaigns = [
   {

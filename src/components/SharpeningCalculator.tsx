@@ -1,11 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { SharpeningOrder, Language, SectionCustomization, SiteSettings } from '../types';
+import {
+  DiscountCode,
+  Language,
+  SectionCustomization,
+  SharpeningOrder,
+  SharpeningPricingConfig,
+  SiteSettings,
+} from '../types';
+import { defaultSharpeningPricing } from '../data/initialData';
 import { translations } from '../utils/i18n';
 import { useForm } from 'react-hook-form';
 import { useFirebase } from '../context/FirebaseContext';
+import {
+  normalizeDiscountCodeKey,
+  verifyDiscountCodeInFirestore,
+} from '../services/firestoreSync';
 import { GoogleBrandIcon } from './GoogleBrandIcon';
 import { ExternalIconBadge } from './ExternalIconBadge';
-import { Calculator, CheckCircle2, Send, Clock, AlertCircle, UserCheck } from 'lucide-react';
+import {
+  Calculator,
+  CheckCircle2,
+  Send,
+  Clock,
+  AlertCircle,
+  UserCheck,
+  Tag,
+  Sparkles,
+  X,
+  Loader2,
+} from 'lucide-react';
 import { Disc, Cpu } from '@phosphor-icons/react';
 import { motion } from 'motion/react';
 
@@ -13,7 +36,8 @@ interface SharpeningCalculatorProps {
   language: Language;
   settings?: SiteSettings;
   sectionConfig?: SectionCustomization;
-  onOrderCreated: (order: SharpeningOrder) => void;
+  discountCodes?: DiscountCode[];
+  onOrderCreated: (order: SharpeningOrder, appliedDiscount?: DiscountCode) => void;
 }
 
 interface SharpeningCustomerInputs {
@@ -27,20 +51,30 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
   language,
   settings,
   sectionConfig,
+  discountCodes = [],
   onOrderCreated,
 }) => {
   const t = translations[language].calculator;
   const isRtl = language === 'fa';
   const { user, signInWithGoogle } = useFirebase();
 
-  const [bladeType, setBladeType] = useState('mdf');
+  const [bladeType, setBladeType] = useState<'mdf' | 'scoring' | 'solid' | 'alu'>('mdf');
   const [diameter, setDiameter] = useState('300');
   const [teeth, setTeeth] = useState('96');
-  const [serviceType, setServiceType] = useState('std');
+  const [serviceType, setServiceType] = useState<'std' | 'teeth_rep' | 'balance'>('std');
   const [quantity, setQuantity] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitNotice, setSubmitNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Discount Code verification & application state
+  const [discountInput, setDiscountInput] = useState('');
+  const [checkingCode, setCheckingCode] = useState(false);
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
+  const [discountStatus, setDiscountStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
 
   const {
     register,
@@ -63,26 +97,166 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
     }
   }, [user?.displayName, setValue]);
 
-  const calculatePrice = () => {
-    let basePricePerTooth = 3500;
-    if (serviceType === 'teeth_rep') basePricePerTooth += 2500;
-    if (serviceType === 'balance') basePricePerTooth += 1500;
+  const pricing: SharpeningPricingConfig = {
+    ...defaultSharpeningPricing,
+    ...(settings?.sharpeningPricing || {}),
+    bladeTypeSurchargePercent: {
+      ...defaultSharpeningPricing.bladeTypeSurchargePercent,
+      ...(settings?.sharpeningPricing?.bladeTypeSurchargePercent || {}),
+    },
+  };
 
-    const toothNum = parseInt(teeth) || 96;
-    const singlePrice = toothNum * basePricePerTooth + 40000;
-    const total = singlePrice * (quantity || 1);
-
+  const formatMoney = (amount: number) => {
+    const safeAmount = Math.max(0, Math.round(amount));
+    const usdRate = Math.max(1000, Number(pricing.usdExchangeRate) || 600000);
     return {
-      toman: total.toLocaleString('fa-IR') + ' تومان',
-      tomanEn: total.toLocaleString('en-US') + ' Toman (~$' + (total / 600000).toFixed(1) + ')',
-      raw: total,
+      fa: `${safeAmount.toLocaleString('fa-IR')} تومان`,
+      en: `${safeAmount.toLocaleString('en-US')} Toman (~$${(safeAmount / usdRate).toFixed(1)})`,
+      raw: safeAmount,
     };
   };
 
-  const calculated = calculatePrice();
+  const calculateEstimate = () => {
+    let perTooth = Number(pricing.basePricePerTooth) || 3500;
+    if (serviceType === 'teeth_rep') {
+      perTooth += Number(pricing.teethRepairExtraPerTooth) || 0;
+    }
+    if (serviceType === 'balance') {
+      perTooth += Number(pricing.balanceExtraPerTooth) || 0;
+    }
+
+    const toothNum = parseInt(teeth, 10) || 96;
+    const setupFee = Number(pricing.fixedSetupFeePerBlade) || 0;
+    const bladeMultiplierPct = Number(pricing.bladeTypeSurchargePercent[bladeType]) || 0;
+    const singleBladeRaw = Math.round(
+      (toothNum * perTooth + setupFee) * (1 + bladeMultiplierPct / 100)
+    );
+    const subtotalRaw = Math.max(0, singleBladeRaw * (quantity || 1));
+
+    let discountRaw = 0;
+    if (appliedDiscount && !appliedDiscount.isUsed) {
+      if (appliedDiscount.discountType === 'percent') {
+        const pct = Math.min(100, Math.max(0, Number(appliedDiscount.discountValue) || 0));
+        discountRaw = Math.round((subtotalRaw * pct) / 100);
+      } else {
+        discountRaw = Math.min(subtotalRaw, Math.max(0, Number(appliedDiscount.discountValue) || 0));
+      }
+    }
+
+    const finalRaw = Math.max(0, subtotalRaw - discountRaw);
+
+    return {
+      subtotal: formatMoney(subtotalRaw),
+      discount: formatMoney(discountRaw),
+      final: formatMoney(finalRaw),
+      hasDiscount: Boolean(appliedDiscount && discountRaw > 0),
+    };
+  };
+
+  const estimate = calculateEstimate();
+
+  const resolveCodeMatch = async (rawCode: string): Promise<DiscountCode | null> => {
+    const normalized = normalizeDiscountCodeKey(rawCode);
+    if (normalized.length < 2) return null;
+
+    const remote = await verifyDiscountCodeInFirestore(normalized);
+    if (remote.found && remote.code) {
+      return remote.code;
+    }
+
+    const localMatch = discountCodes.find(
+      (c) => normalizeDiscountCodeKey(c.code || c.id) === normalized
+    );
+    return localMatch || null;
+  };
+
+  const handleApplyDiscount = async () => {
+    const normalized = normalizeDiscountCodeKey(discountInput);
+    if (normalized.length < 2) {
+      setDiscountStatus({
+        type: 'error',
+        message: isRtl
+          ? 'لطفاً کد تخفیف معتبر (حداقل ۲ کاراکتر انگلیسی/عدد) وارد کنید.'
+          : 'Please enter a valid discount code.',
+      });
+      return;
+    }
+
+    setCheckingCode(true);
+    setDiscountStatus(null);
+    try {
+      const matched = await resolveCodeMatch(normalized);
+      if (!matched) {
+        setAppliedDiscount(null);
+        setDiscountStatus({
+          type: 'error',
+          message: isRtl
+            ? 'کد تخفیف وارد شده در لیست کدهای ثبت‌شده پنل مدیریت یافت نشد.'
+            : 'Discount code not found in our system.',
+        });
+        return;
+      }
+
+      if (matched.isUsed) {
+        setAppliedDiscount(null);
+        setDiscountStatus({
+          type: 'error',
+          message: isRtl
+            ? 'این کد تخفیف قبلاً استفاده شده است و دیگر قابل اعمال نیست.'
+            : 'This discount code has already been redeemed.',
+        });
+        return;
+      }
+
+      setAppliedDiscount(matched);
+      setDiscountInput(matched.code);
+      const valueText =
+        matched.discountType === 'percent'
+          ? isRtl
+            ? `${matched.discountValue.toLocaleString('fa-IR')}٪ تخفیف`
+            : `${matched.discountValue}% off`
+          : isRtl
+          ? `${matched.discountValue.toLocaleString('fa-IR')} تومان کسر مبلغ`
+          : `${matched.discountValue.toLocaleString('en-US')} Toman off`;
+
+      setDiscountStatus({
+        type: 'success',
+        message: isRtl
+          ? `کد «${matched.code}» تایید شد (${valueText}) و از مبلغ محاسبه‌شده کسر گردید.`
+          : `Code "${matched.code}" verified (${valueText}) and deducted from your total.`,
+      });
+    } finally {
+      setCheckingCode(false);
+    }
+  };
+
+  const handleClearDiscount = () => {
+    setAppliedDiscount(null);
+    setDiscountInput('');
+    setDiscountStatus(null);
+  };
 
   const onSubmit = async (data: SharpeningCustomerInputs) => {
     setSubmitNotice(null);
+
+    let verifiedDiscount: DiscountCode | undefined;
+    if (appliedDiscount) {
+      setSubmitting(true);
+      const latestCheck = await resolveCodeMatch(appliedDiscount.code);
+      setSubmitting(false);
+      if (!latestCheck || latestCheck.isUsed) {
+        setAppliedDiscount(null);
+        setDiscountStatus({
+          type: 'error',
+          message: isRtl
+            ? 'کد تخفیف انتخاب‌شده دیگر معتبر نیست یا پیش‌تر مصرف شده است. لطفاً مجدداً بررسی کنید.'
+            : 'Selected discount code is no longer valid or has already been redeemed.',
+        });
+        return;
+      }
+      verifiedDiscount = latestCheck;
+    }
+
     let activeUser = user;
     if (!activeUser) {
       setSubmitting(true);
@@ -97,6 +271,14 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
         return;
       }
     }
+
+    const createdAtLabel = new Date().toLocaleDateString(isRtl ? 'fa-IR' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
 
     const newOrder: SharpeningOrder = {
       id: `SH-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -120,24 +302,31 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
           ? t.serviceTeethRep
           : t.serviceBalance,
       quantity,
-      estimatedPrice: isRtl ? calculated.toman : calculated.tomanEn,
+      estimatedPrice: isRtl ? estimate.final.fa : estimate.final.en,
+      ...(verifiedDiscount && estimate.hasDiscount
+        ? {
+            originalPrice: isRtl ? estimate.subtotal.fa : estimate.subtotal.en,
+            discountCode: verifiedDiscount.code,
+            discountAmount: isRtl ? estimate.discount.fa : estimate.discount.en,
+          }
+        : {}),
       status: 'new',
-      createdAt: new Date().toLocaleDateString(isRtl ? 'fa-IR' : 'en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      createdAt: createdAtLabel,
       notes: data.notes.trim(),
     };
 
-    onOrderCreated(newOrder);
+    onOrderCreated(newOrder, verifiedDiscount);
+    setAppliedDiscount(null);
+    setDiscountInput('');
+    setDiscountStatus(null);
     setIsSubmitted(true);
   };
 
   return (
-    <section id="calculator" className="py-14 sm:py-20 lg:py-24 bg-white dark:bg-[#091A42] text-slate-900 dark:text-white relative overflow-hidden">
+    <section
+      id="calculator"
+      className="py-14 sm:py-20 lg:py-24 bg-white dark:bg-[#091A42] text-slate-900 dark:text-white relative overflow-hidden"
+    >
       <div className="absolute inset-0 opacity-30 dark:opacity-15 rcg-pattern-triangles dark:rcg-pattern-triangles-dark pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -145,13 +334,17 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-60px' }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto mb-8 sm:mb-14 space-y-3"
         >
           <div className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-full bg-orange-50 dark:bg-[#FD5202]/15 border border-orange-200 dark:border-[#FD5202]/40 text-[11px] sm:text-xs font-bold text-[#FD5202]">
             <Cpu weight="duotone" className="w-4 h-4" />
-            <span>{isRtl ? sectionConfig?.badgeFa || 'مرکز مکانیزه تیزکاری آلمانی RCG' : sectionConfig?.badgeEn || 'RCG Automated Sharpening Center'}</span>
+            <span>
+              {isRtl
+                ? sectionConfig?.badgeFa || 'مرکز مکانیزه تیزکاری آلمانی RCG'
+                : sectionConfig?.badgeEn || 'RCG Automated Sharpening Center'}
+            </span>
           </div>
 
           <h2 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#091A42] dark:text-white">
@@ -168,7 +361,7 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
           <motion.div
             initial={{ opacity: 0, y: 28 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-40px' }}
+            viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
             transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-7 bg-slate-50 dark:bg-[#060F26]/95 border border-slate-200 dark:border-blue-500/30 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-lg space-y-5 sm:space-y-6"
           >
@@ -212,11 +405,12 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                       <select
                         value={bladeType}
                         onChange={(e) => {
-                          setBladeType(e.target.value);
-                          if (e.target.value === 'scoring') {
+                          const next = e.target.value as 'mdf' | 'scoring' | 'solid' | 'alu';
+                          setBladeType(next);
+                          if (next === 'scoring') {
                             setDiameter('120');
                             setTeeth('24');
-                          } else if (e.target.value === 'mdf') {
+                          } else if (next === 'mdf') {
                             setDiameter('300');
                             setTeeth('96');
                           }
@@ -286,7 +480,7 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                           min="1"
                           max="50"
                           value={quantity}
-                          onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                          onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
                           className="flex-1 min-w-0 min-h-[44px] text-center bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 rounded-xl py-2 text-slate-900 dark:text-white font-bold text-sm tabular-nums"
                         />
                         <button
@@ -315,8 +509,12 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                             : 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:text-slate-200'
                         }`}
                       >
-                        <span className="font-bold block text-[#091A42] dark:text-white">{isRtl ? 'تیزکاری استاندارد' : 'Standard Sharpening'}</span>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{isRtl ? 'ماشین تمام اتومات آلمان' : 'Automated German CNC'}</span>
+                        <span className="font-bold block text-[#091A42] dark:text-white">
+                          {isRtl ? 'تیزکاری استاندارد' : 'Standard Sharpening'}
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {isRtl ? 'ماشین تمام اتومات آلمان' : 'Automated German CNC'}
+                        </span>
                       </button>
 
                       <button
@@ -328,8 +526,12 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                             : 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:text-slate-200'
                         }`}
                       >
-                        <span className="font-bold block text-[#091A42] dark:text-white">{isRtl ? 'تعویض دندانه' : 'Tooth Replacement'}</span>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{isRtl ? 'الماسه کارباید اصلی' : 'Original Micrograin Tip'}</span>
+                        <span className="font-bold block text-[#091A42] dark:text-white">
+                          {isRtl ? 'تعویض دندانه' : 'Tooth Replacement'}
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {isRtl ? 'الماسه کارباید اصلی' : 'Original Micrograin Tip'}
+                        </span>
                       </button>
 
                       <button
@@ -341,11 +543,82 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                             : 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:text-slate-200'
                         }`}
                       >
-                        <span className="font-bold block text-[#091A42] dark:text-white">{isRtl ? 'بالانس و رفع تاب' : 'Plate Balancing'}</span>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{isRtl ? 'کاهش لرزش و صدا' : 'Vibration & Runout'}</span>
+                        <span className="font-bold block text-[#091A42] dark:text-white">
+                          {isRtl ? 'بالانس و رفع تاب' : 'Plate Balancing'}
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {isRtl ? 'کاهش لرزش و صدا' : 'Vibration & Runout'}
+                        </span>
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Discount Code Section */}
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#091A42]/90 border border-slate-200 dark:border-blue-800/70 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
+                      <Tag className="w-4 h-4 text-[#FD5202]" />
+                      <span>{isRtl ? 'کد تخفیف تیزکاری (اختیاری)' : 'Sharpening Discount Code (Optional)'}</span>
+                    </label>
+                    {appliedDiscount && (
+                      <button
+                        type="button"
+                        onClick={handleClearDiscount}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>{isRtl ? 'حذف کد' : 'Remove'}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <input
+                      type="text"
+                      value={discountInput}
+                      onChange={(e) => {
+                        setDiscountInput(e.target.value.toUpperCase());
+                        if (appliedDiscount && normalizeDiscountCodeKey(e.target.value) !== appliedDiscount.code) {
+                          setAppliedDiscount(null);
+                          setDiscountStatus(null);
+                        }
+                      }}
+                      dir="ltr"
+                      placeholder={isRtl ? 'مثال: RCG-OFF20' : 'e.g. RCG-OFF20'}
+                      className="flex-1 min-h-[42px] bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2 text-sm font-mono uppercase tracking-wider text-slate-900 dark:text-white focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleApplyDiscount()}
+                      disabled={checkingCode || !discountInput.trim()}
+                      className="min-h-[42px] px-4 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                    >
+                      {checkingCode ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5 text-[#A6D6FE]" />
+                      )}
+                      <span>{isRtl ? 'بررسی و اعمال کد' : 'Verify & Apply'}</span>
+                    </button>
+                  </div>
+
+                  {discountStatus && (
+                    <div
+                      className={`text-[11px] font-semibold px-3 py-2 rounded-xl flex items-center gap-2 border ${
+                        discountStatus.type === 'success'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+                      {discountStatus.type === 'success' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                      <span>{discountStatus.message}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* 2. Customer Contact */}
@@ -357,7 +630,9 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">{t.fullName} *</label>
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        {t.fullName} *
+                      </label>
                       <input
                         type="text"
                         {...register('customerName', {
@@ -366,7 +641,9 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                         })}
                         placeholder={isRtl ? 'مثال: صنایع چوب افرا' : 'e.g. Acme Woodcraft'}
                         className={`w-full bg-white dark:bg-[#091A42] border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none ${
-                          errors.customerName ? 'border-rose-500' : 'border-slate-200 dark:border-blue-900 focus:border-[#FD5202]'
+                          errors.customerName
+                            ? 'border-rose-500'
+                            : 'border-slate-200 dark:border-blue-900 focus:border-[#FD5202]'
                         }`}
                       />
                       {errors.customerName && (
@@ -378,7 +655,9 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">{t.phone} *</label>
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        {t.phone} *
+                      </label>
                       <input
                         type="tel"
                         {...register('phone', {
@@ -387,7 +666,9 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                         })}
                         placeholder="0911..."
                         className={`w-full bg-white dark:bg-[#091A42] border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none font-mono ${
-                          errors.phone ? 'border-rose-500' : 'border-slate-200 dark:border-blue-900 focus:border-[#FD5202]'
+                          errors.phone
+                            ? 'border-rose-500'
+                            : 'border-slate-200 dark:border-blue-900 focus:border-[#FD5202]'
                         }`}
                       />
                       {errors.phone && (
@@ -399,7 +680,9 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">{t.city}</label>
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        {t.city}
+                      </label>
                       <input
                         type="text"
                         {...register('city')}
@@ -410,7 +693,9 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">{t.notes}</label>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {t.notes}
+                    </label>
                     <input
                       type="text"
                       {...register('notes')}
@@ -465,14 +750,13 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                 )}
               </form>
             )}
-
           </motion.div>
 
           {/* Right Summary Card (Price estimation & German Tech highlights) */}
           <motion.div
             initial={{ opacity: 0, y: 35 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-40px' }}
+            viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
             transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-5 space-y-6"
           >
@@ -491,13 +775,31 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
               </div>
 
               {/* Price Display */}
-              <div className="py-5 sm:py-6 text-center space-y-1">
-                <span className="text-xs text-slate-300">{t.estPrice}</span>
+              <div className="py-5 sm:py-6 text-center space-y-2">
+                <span className="text-xs text-slate-300 block">{t.estPrice}</span>
+
+                {estimate.hasDiscount && appliedDiscount && (
+                  <div className="space-y-1">
+                    <p className="text-sm sm:text-base text-slate-300/80 line-through tabular-nums">
+                      {isRtl ? estimate.subtotal.fa : estimate.subtotal.en}
+                    </p>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 text-xs font-bold tabular-nums">
+                      <Tag className="w-3.5 h-3.5" />
+                      <span className="font-mono">{appliedDiscount.code}</span>
+                      <span>
+                        ({isRtl ? `-${estimate.discount.fa}` : `-${estimate.discount.en}`})
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <p className="text-2xl sm:text-4xl font-black text-white tabular-nums break-words">
-                  {isRtl ? calculated.toman : calculated.tomanEn}
+                  {isRtl ? estimate.final.fa : estimate.final.en}
                 </p>
                 <p className="text-[11px] text-blue-100/80 pt-1">
-                  {isRtl ? 'قیمت بر اساس تعرفه مصوب و تیپ دندانه کارباید' : 'Official standardized pricing'}
+                  {isRtl
+                    ? pricing.pricingNoteFa || 'قیمت بر اساس تعرفه مصوب و تیپ دندانه کارباید'
+                    : pricing.pricingNoteEn || 'Official standardized pricing'}
                 </p>
               </div>
 
@@ -507,22 +809,36 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                   <Clock className="w-4 h-4 text-[#FD5202] shrink-0" />
                   <span>{t.estTime}</span>
                 </div>
-                <span className="font-bold text-white">{t.turnaround}</span>
+                <span className="font-bold text-white">
+                  {isRtl ? pricing.turnaroundFa || t.turnaround : pricing.turnaroundEn || t.turnaround}
+                </span>
               </div>
 
               {/* RCG Advantages */}
               <div className="mt-4 sm:mt-5 space-y-2.5 text-xs text-blue-50 border-t border-white/15 pt-4">
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-[#FD5202] shrink-0 mt-0.5" />
-                  <span>{isRtl ? 'ماشین‌آلات آلمانی Vollmer با سیستم خنک‌کاری صابون مایع بدون سوختگی الماسه' : 'Vollmer German robotic grinding with high-pressure fluid cooling'}</span>
+                  <span>
+                    {isRtl
+                      ? 'ماشین‌آلات آلمانی Vollmer با سیستم خنک‌کاری صابون مایع بدون سوختگی الماسه'
+                      : 'Vollmer German robotic grinding with high-pressure fluid cooling'}
+                  </span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-[#FD5202] shrink-0 mt-0.5" />
-                  <span>{isRtl ? 'حفظ کامل زاویه برشی فابریک کارخانه و افزایش عمر مفید تیغه تا ۴۰٪' : 'Factory rake angle preservation extending blade lifespan by up to 40%'}</span>
+                  <span>
+                    {isRtl
+                      ? 'حفظ کامل زاویه برشی فابریک کارخانه و افزایش عمر مفید تیغه تا ۴۰٪'
+                      : 'Factory rake angle preservation extending blade lifespan by up to 40%'}
+                  </span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-[#FD5202] shrink-0 mt-0.5" />
-                  <span>{isRtl ? 'امکان تحویل و دریافت با سرویس پیک در رشت، بابل، ساری و شهرهای مجاور' : 'Workshop courier pickup service across northern industrial zones'}</span>
+                  <span>
+                    {isRtl
+                      ? 'امکان تحویل و دریافت با سرویس پیک در رشت، بابل، ساری و شهرهای مجاور'
+                      : 'Workshop courier pickup service across northern industrial zones'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -540,15 +856,14 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                   {isRtl ? 'تکنولوژی آلمان در قلب شمال کشور' : 'German Tooling Technology in Northern Iran'}
                 </p>
                 <p className="text-[11px] sm:text-xs text-slate-300">
-                  {isRtl ? 'تیزکاری بیش از ۲۰,۰۰۰ تیغ اره صنعتی از سال ۱۳۸۹' : 'Over 20,000 industrial blades processed since 2010'}
+                  {isRtl
+                    ? 'تیزکاری بیش از ۲۰,۰۰۰ تیغ اره صنعتی از سال ۱۳۸۹'
+                    : 'Over 20,000 industrial blades processed since 2010'}
                 </p>
               </div>
             </div>
-
           </motion.div>
-
         </div>
-
       </div>
     </section>
   );

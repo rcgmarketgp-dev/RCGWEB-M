@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { RcgLogo } from './RcgLogo';
 import { GoogleBrandIcon } from './GoogleBrandIcon';
-import { BOOTSTRAPPED_ADMIN_EMAIL, useFirebase } from '../context/FirebaseContext';
+import { isBootstrappedAdminEmail, useFirebase } from '../context/FirebaseContext';
 import { Language, NavLinkItem, SiteSettings } from '../types';
 import { translations } from '../utils/i18n';
 import { triggerCtaLink } from '../utils/ctaNavigation';
-import { Globe, Shield, Moon, Sun, Menu, X, PhoneCall, SlidersHorizontal, User, Palette } from 'lucide-react';
+import { Globe, Shield, Moon, Sun, Menu, X, PhoneCall, SlidersHorizontal, User } from 'lucide-react';
 import { ExternalIconBadge } from './ExternalIconBadge';
 
 interface NavbarProps {
@@ -13,11 +14,9 @@ interface NavbarProps {
   onLanguageChange: (lang: Language) => void;
   isDark: boolean;
   onThemeToggle: () => void;
-  onOpenUiThemePicker?: () => void;
   navLinks: NavLinkItem[];
   settings: SiteSettings;
   isPageEditMode?: boolean;
-  onTogglePageEditMode?: () => void;
   onEditHeaderSection?: () => void;
   onOpenAdmin?: () => void;
   onOpenUserPortal: () => void;
@@ -29,11 +28,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLanguageChange,
   isDark,
   onThemeToggle,
-  onOpenUiThemePicker,
   navLinks,
   settings,
   isPageEditMode = false,
-  onTogglePageEditMode,
   onEditHeaderSection,
   onOpenAdmin,
   onOpenUserPortal,
@@ -45,10 +42,51 @@ export const Navbar: React.FC<NavbarProps> = ({
   const canEdit = Boolean(
     user &&
       user.emailVerified &&
-      user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase() &&
+      isBootstrappedAdminEmail(user.email) &&
       isAdmin
   );
   const t = translations[language].nav;
+
+  const isRtl = language === 'fa';
+  const visibleLinks = navLinks.filter((l) => l.isVisible);
+  const [activeSectionId, setActiveSectionId] = useState<string>('hero');
+
+  useEffect(() => {
+    const targetIds = Array.from(new Set(['hero', ...visibleLinks.map((l) => l.targetId)]));
+    const elements = targetIds
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => Boolean(el));
+
+    if (elements.length === 0) return;
+
+    const ratios = new Map<string, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          ratios.set(entry.target.id, entry.isIntersecting ? entry.intersectionRatio : 0);
+        });
+        let bestId = '';
+        let bestRatio = 0;
+        for (const id of targetIds) {
+          const r = ratios.get(id) ?? 0;
+          if (r > bestRatio) {
+            bestRatio = r;
+            bestId = id;
+          }
+        }
+        if (bestId) {
+          setActiveSectionId(bestId);
+        }
+      },
+      {
+        rootMargin: '-20% 0px -55% 0px',
+        threshold: [0, 0.15, 0.35, 0.6],
+      }
+    );
+
+    elements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [navLinks]);
 
   const handleLanguageToggle = () => {
     setIsFading(true);
@@ -62,14 +100,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const scrollTo = (id: string) => {
     setMobileMenuOpen(false);
+    setActiveSectionId(id);
     const element = document.getElementById(id);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
     }
   };
-
-  const isRtl = language === 'fa';
-  const visibleLinks = navLinks.filter((l) => l.isVisible);
 
   const headerCtaLabel = isRtl
     ? settings.headerCtaTextFa || t.consultationCta
@@ -84,7 +120,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header
+    <motion.header
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className={`sticky top-0 z-40 w-full backdrop-blur-md bg-white/95 dark:bg-[#060F26]/95 border-b text-slate-900 dark:text-white transition-colors duration-200 shadow-sm dark:shadow-lg dark:shadow-black/20 ${
         isPageEditMode
           ? 'border-[#FD5202] ring-1 ring-[#FD5202]/40'
@@ -138,21 +177,33 @@ export const Navbar: React.FC<NavbarProps> = ({
             isFading ? 'opacity-0' : 'opacity-100'
           }`}
         >
-          {visibleLinks.map((link) => (
-            <button
-              key={link.id}
-              onClick={() => scrollTo(link.targetId)}
-              className={`hover:text-[#FD5202] dark:hover:text-[#FD5202] transition-colors whitespace-nowrap shrink-0 py-2 cursor-pointer ${
-                link.targetId === 'campaigns'
-                  ? 'text-[#FD5202] font-bold'
-                  : link.targetId === 'calculator'
-                  ? 'text-[#144AE0] dark:text-[#A6D6FE] font-bold'
-                  : ''
-              }`}
-            >
-              {isRtl ? link.labelFa : link.labelEn}
-            </button>
-          ))}
+          {visibleLinks.map((link) => {
+            const isActive = activeSectionId === link.targetId;
+            return (
+              <button
+                key={link.id}
+                onClick={() => scrollTo(link.targetId)}
+                className={`relative hover:text-[#FD5202] dark:hover:text-[#FD5202] transition-colors whitespace-nowrap shrink-0 py-2 cursor-pointer ${
+                  link.targetId === 'campaigns'
+                    ? 'text-[#FD5202] font-bold'
+                    : link.targetId === 'calculator'
+                    ? 'text-[#144AE0] dark:text-[#A6D6FE] font-bold'
+                    : isActive
+                    ? 'text-[#091A42] dark:text-white font-bold'
+                    : ''
+                }`}
+              >
+                {isRtl ? link.labelFa : link.labelEn}
+                {isActive && (
+                  <motion.span
+                    layoutId="nav-active-indicator"
+                    transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                    className="absolute bottom-0.5 inset-x-0 h-0.5 rounded-full bg-[#FD5202]"
+                  />
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Zone 3: Corporate Action Controls */}
@@ -184,34 +235,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#091A42]" />}
           </button>
-
-          {/* Interactive UI & Button Theme Studio Trigger (Admin Only: rcgroup.mdp@gmail.com) */}
-          {canEdit && onOpenUiThemePicker && (
-            <button
-              onClick={onOpenUiThemePicker}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-2 min-h-[38px] text-xs font-semibold rounded-xl bg-slate-100 hover:bg-orange-50 dark:bg-blue-950/60 dark:hover:bg-blue-900/80 border border-slate-200 dark:border-blue-800/50 hover:border-[#FD5202]/60 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
-              title={isRtl ? 'انتخاب تم کلیدها و رفتار رابط کاربری' : 'Choose UI & Button Theme'}
-            >
-              <Palette className="w-3.5 h-3.5 text-[#FD5202]" />
-              <span className="hidden lg:inline">{isRtl ? 'تم کلیدها' : 'UI Theme'}</span>
-            </button>
-          )}
-
-          {/* Live Page Edit Mode Toggle Quick Pill (Admin Only) */}
-          {canEdit && onTogglePageEditMode && (
-            <button
-              onClick={onTogglePageEditMode}
-              className={`hidden md:flex items-center gap-1.5 px-3 py-2 min-h-[38px] text-xs font-semibold rounded-xl border transition-colors cursor-pointer whitespace-nowrap ${
-                isPageEditMode
-                  ? 'bg-[#FD5202] border-[#FD5202] text-white shadow-sm'
-                  : 'bg-slate-100 hover:bg-blue-50 dark:bg-blue-950/80 dark:hover:bg-blue-900 border-slate-200 dark:border-blue-800/60 text-slate-700 dark:text-slate-200'
-              }`}
-              title={isRtl ? 'فعال‌سازی حالت تنظیمات صفحه' : 'Toggle Page Settings Mode'}
-            >
-              <SlidersHorizontal className={`w-3.5 h-3.5 ${isPageEditMode ? 'text-white' : 'text-[#FD5202]'}`} />
-              <span>{isPageEditMode ? (isRtl ? 'حالت ویرایش فعال' : 'Edit Mode ON') : (isRtl ? 'تنظیمات صفحه' : 'Edit Page')}</span>
-            </button>
-          )}
 
           {/* Google Sign-In / Authenticated User Account */}
           {user ? (
@@ -283,70 +306,51 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Mobile Drawer Menu */}
-      {mobileMenuOpen && (
-        <div className="xl:hidden max-h-[calc(100dvh-4rem)] overflow-y-auto bg-white dark:bg-[#060F26] border-b border-slate-200 dark:border-blue-900/50 px-4 pt-3 pb-6 space-y-3 shadow-xl">
-          <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm font-semibold">
-            {visibleLinks.map((link) => (
-              <button
-                key={link.id}
-                onClick={() => scrollTo(link.targetId)}
-                className="px-3 py-2.5 min-h-[44px] flex items-center text-right rtl:text-right ltr:text-left rounded-xl bg-slate-50 hover:bg-blue-50 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-slate-800 dark:text-slate-200 hover:text-[#FD5202] border border-slate-200 dark:border-blue-900/40 transition-colors cursor-pointer"
-              >
-                <span className="truncate">{isRtl ? link.labelFa : link.labelEn}</span>
-              </button>
-            ))}
-          </div>
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="xl:hidden overflow-hidden bg-white dark:bg-[#060F26] border-b border-slate-200 dark:border-blue-900/50 shadow-xl"
+          >
+            <div className="max-h-[calc(100dvh-4rem)] overflow-y-auto px-4 pt-3 pb-6 space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm font-semibold">
+                {visibleLinks.map((link) => {
+                  const isActive = activeSectionId === link.targetId;
+                  return (
+                    <button
+                      key={link.id}
+                      onClick={() => scrollTo(link.targetId)}
+                      className={`px-3 py-2.5 min-h-[44px] flex items-center text-right rtl:text-right ltr:text-left rounded-xl border transition-colors cursor-pointer ${
+                        isActive
+                          ? 'bg-orange-50 dark:bg-[#FD5202]/15 border-[#FD5202]/50 text-[#FD5202] font-bold'
+                          : 'bg-slate-50 hover:bg-blue-50 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-slate-800 dark:text-slate-200 hover:text-[#FD5202] border-slate-200 dark:border-blue-900/40'
+                      }`}
+                    >
+                      <span className="truncate">{isRtl ? link.labelFa : link.labelEn}</span>
+                    </button>
+                  );
+                })}
+              </div>
 
-          {canEdit && (
+          {canEdit && onOpenAdmin && (
             <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-blue-950/35 border border-slate-200 dark:border-blue-900/50 space-y-2">
               <span className="text-[11px] font-extrabold text-[#144AE0] dark:text-[#A6D6FE] px-1 block">
-                {isRtl ? 'ابزارهای مدیریت سایت (مدیر کل)' : 'Admin Tools & Controls'}
+                {isRtl ? 'پنل مدیریت سایت (مدیر کل)' : 'Admin Console'}
               </span>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {onTogglePageEditMode && (
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      onTogglePageEditMode();
-                    }}
-                    className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 min-h-[44px] text-xs font-bold rounded-xl border cursor-pointer ${
-                      isPageEditMode
-                        ? 'bg-[#FD5202] text-white border-[#FD5202]'
-                        : 'bg-white dark:bg-blue-950 text-slate-800 dark:text-white border-slate-200 dark:border-blue-800'
-                    }`}
-                  >
-                    <SlidersHorizontal className="w-4 h-4 shrink-0" />
-                    <span>{isPageEditMode ? (isRtl ? 'خروج از تنظیمات صفحه' : 'Exit Edit Mode') : (isRtl ? 'تنظیمات صفحه (ویرایش روی سایت)' : 'Enable Page Edit Mode')}</span>
-                  </button>
-                )}
-
-                {onOpenAdmin && (
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      onOpenAdmin();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 min-h-[44px] text-xs font-bold rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/80 text-[#091A42] dark:text-white cursor-pointer"
-                  >
-                    <Shield className="w-4 h-4 text-[#144AE0] dark:text-[#A6D6FE] shrink-0" />
-                    <span>{t.admin}</span>
-                  </button>
-                )}
-
-                {onOpenUiThemePicker && (
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      onOpenUiThemePicker();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 min-h-[44px] text-xs font-bold rounded-xl border border-orange-200 dark:border-blue-800 bg-orange-50/70 dark:bg-blue-950/70 text-[#091A42] dark:text-white cursor-pointer"
-                  >
-                    <Palette className="w-4 h-4 text-[#FD5202] shrink-0" />
-                    <span>{isRtl ? 'تغییر تم کلیدها و رابط کاربری' : 'UI & Button Theme Studio'}</span>
-                  </button>
-                )}
-              </div>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenAdmin();
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 min-h-[44px] text-xs font-bold rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/80 text-[#091A42] dark:text-white cursor-pointer"
+              >
+                <Shield className="w-4 h-4 text-[#144AE0] dark:text-[#A6D6FE] shrink-0" />
+                <span>{t.admin}</span>
+              </button>
             </div>
           )}
 
@@ -388,8 +392,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             />
             <span>{headerCtaLabel}</span>
           </button>
-        </div>
-      )}
-    </header>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.header>
   );
 };

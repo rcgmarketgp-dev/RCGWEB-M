@@ -67,7 +67,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-60px' }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto mb-8 sm:mb-14 space-y-3"
         >
@@ -91,7 +91,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
           <motion.div
             initial={{ opacity: 0, x: isRtl ? 28 : -28 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
+            viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-6 relative"
           >
@@ -124,7 +124,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
           <motion.div
             initial={{ opacity: 0, x: isRtl ? -28 : 28 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true, margin: '-50px' }}
+            viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-6 space-y-4 sm:space-y-5"
           >
@@ -168,7 +168,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 28 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-40px' }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="mb-10 sm:mb-14 p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-slate-50 dark:bg-[#091A42]/95 border border-slate-200 dark:border-blue-500/30 shadow-lg space-y-5 sm:space-y-6"
         >
@@ -211,7 +211,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
                   <motion.div
                     initial={{ width: 0 }}
                     whileInView={{ width: `${metric.value}%` }}
-                    viewport={{ once: true }}
+                    viewport={{ once: true, amount: 'some' }}
                     transition={{ duration: 1, delay: idx * 0.12, ease: [0.16, 1, 0.3, 1] }}
                     className={`h-full rounded-full bg-gradient-to-r ${metric.gradient}`}
                   />
@@ -236,7 +236,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
               key={idx}
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-40px' }}
+              viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
               transition={{ duration: 0.45, delay: idx * 0.08, ease: [0.16, 1, 0.3, 1] }}
               whileHover={{ y: -4, transition: { duration: 0.2 } }}
               className="p-4 sm:p-6 rounded-2xl bg-slate-50 dark:bg-[#091A42]/75 border border-slate-200 dark:border-blue-900/50 hover:border-[#144AE0] dark:hover:border-blue-500/60 transition-all duration-300 space-y-3 shadow-sm hover:shadow-md"

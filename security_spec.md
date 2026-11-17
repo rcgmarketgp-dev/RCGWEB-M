@@ -9,6 +9,8 @@
 6. **Privilege Escalation Block**: Users creating or updating `user_profiles/{userId}` can never attach RBAC fields (`role`, `isAdmin`, `permissions`).
 7. **Strict Schema & Size Bounds**: Every string and path variable obeys `isValidId` (`^[a-zA-Z0-9_-]+$`, max 128 chars) and explicit `.size()` boundaries matching `firebase-blueprint.json` to block ghost fields and 1MB payload DoS attacks.
 
+8. **Single-Use Discount Code Integrity**: `discount_codes/{codeId}` supports single-document `get` lookup for exact code verification while blocking `list` scraping (`isAdmin()` only). Non-admin verified users may only transition an unused (`isUsed == false`) discount code to `isUsed == true` with immutable `discountType`/`discountValue`/`code`, bound to `usedByUid == request.auth.uid` and `usedAt == request.time`.
+
 ## 2. The "Dirty Dozen" Adversarial Payloads
 1. **Identity Spoofing on Order**: Unauthenticated or mismatched `userId` (`userId: "victim-uid"` when logged in as `attacker-uid`) on `sharpening_orders` -> **DENIED**.
 2. **Ghost / Shadow Field Injection**: Creating an `inquiries` doc with all valid fields plus `"isAdmin": true` or `"discountOverride": 99` -> **DENIED** by `hasOnly(...)`.
@@ -21,7 +23,7 @@
 9. **Immutable Owner Tampering**: Updating `sharpening_orders/{id}` to reassign `userId` -> **DENIED**.
 10. **Path ID Poisoning**: Creating `/products/bad%20id$overflow...` (>128 chars or invalid regex) -> **DENIED** by `isValidId()`.
 11. **1MB+ Denial of Wallet Payload**: Writing a 900KB `message` into `inquiries` -> **DENIED** (`message.size() <= 2000`).
-12. **Unscoped List Scraping**: Attempting `collection(db, 'inquiries')` list query without matching `userId == request.auth.uid` as non-admin -> **DENIED** (`allow list` enforces `resource.data.userId == request.auth.uid`).
+12. **Unscoped List Scraping**: Attempting `collection(db, 'inquiries')` or `collection(db, 'discount_codes')` list query as non-admin -> **DENIED**.
 
 ## 3. Conflict & Audit Matrix
 | Collection | Identity Spoofing Blocked | State Shortcutting Blocked | Value/Size Poisoning Blocked | Shadow Update Blocked |
@@ -39,3 +41,4 @@
 | `sharpening_orders` | Yes | Yes | Yes | Yes |
 | `inquiries` | Yes | Yes | Yes | Yes |
 | `campaign_inquiries` | Yes | Yes | Yes | Yes |
+| `discount_codes` | Yes | Yes | Yes | Yes |

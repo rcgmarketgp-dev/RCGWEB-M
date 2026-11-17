@@ -46,7 +46,7 @@ export const MediaCenter: React.FC<MediaCenterProps> = ({ items, language, secti
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-60px' }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto mb-8 sm:mb-12 space-y-3"
         >
@@ -68,7 +68,7 @@ export const MediaCenter: React.FC<MediaCenterProps> = ({ items, language, secti
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.45, delay: 0.08 }}
           className="flex items-center justify-start sm:justify-center gap-2 overflow-x-auto pb-3 mb-7 sm:mb-10 no-scrollbar"
         >
@@ -101,7 +101,7 @@ export const MediaCenter: React.FC<MediaCenterProps> = ({ items, language, secti
                 key={item.id}
                 initial={{ opacity: 0, y: 28 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '-40px' }}
+                viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
                 transition={{ duration: 0.45, delay: idx * 0.08, ease: [0.16, 1, 0.3, 1] }}
                 whileHover={{ y: -5, transition: { duration: 0.2 } }}
                 onClick={() => setSelectedItem(item)}

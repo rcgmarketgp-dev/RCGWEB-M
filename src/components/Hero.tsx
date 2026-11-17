@@ -284,7 +284,7 @@ export const Hero: React.FC<HeroProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
+          viewport={{ once: true, amount: 'some' }}
           transition={{ duration: 0.55, delay: 0.15 }}
           className={`${heroLayout.metricsGridClass} border-t border-slate-200 dark:border-slate-800/80 grid grid-cols-2 md:grid-cols-4`}
         >

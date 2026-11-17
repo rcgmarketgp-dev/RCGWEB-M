@@ -38,7 +38,7 @@ export const CampaignsSection: React.FC<CampaignsSectionProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-60px' }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto mb-8 sm:mb-14 space-y-3"
         >
@@ -65,7 +65,7 @@ export const CampaignsSection: React.FC<CampaignsSectionProps> = ({
               key={camp.id}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-40px' }}
+              viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
               transition={{ duration: 0.55, delay: idx * 0.1, ease: [0.16, 1, 0.3, 1] }}
               className="group bg-white dark:bg-[#091A42] rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-blue-900/60 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between"
             >

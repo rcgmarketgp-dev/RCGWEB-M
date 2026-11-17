@@ -1,5 +1,5 @@
 import React from 'react';
-import { Language, SectionId } from '../types';
+import { Language, SectionId, UiInteractionMode } from '../types';
 import { SlidersHorizontal, Image as ImageIcon, Link2, Type } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -9,8 +9,30 @@ interface EditableSectionWrapperProps {
   labelEn: string;
   isEditMode: boolean;
   language: Language;
+  uiInteraction?: UiInteractionMode;
   onEditSection: (id: SectionId) => void;
   children: React.ReactNode;
+}
+
+function getSectionTransition(mode: UiInteractionMode = 'corporate-smooth', isHero: boolean) {
+  if (mode === 'reduced-instant') {
+    return { duration: 0.01 };
+  }
+  if (mode === 'snappy-tech') {
+    return { duration: isHero ? 0.35 : 0.38, ease: [0.2, 0.8, 0.2, 1] as const };
+  }
+  if (mode === 'spring-playful') {
+    return {
+      type: 'spring' as const,
+      stiffness: 180,
+      damping: 22,
+      mass: 0.85,
+    };
+  }
+  return {
+    duration: isHero ? 0.55 : 0.62,
+    ease: [0.16, 1, 0.3, 1] as const,
+  };
 }
 
 export const EditableSectionWrapper: React.FC<EditableSectionWrapperProps> = ({
@@ -19,23 +41,26 @@ export const EditableSectionWrapper: React.FC<EditableSectionWrapperProps> = ({
   labelEn,
   isEditMode,
   language,
+  uiInteraction = 'corporate-smooth',
   onEditSection,
   children,
 }) => {
   const isRtl = language === 'fa';
   const isHero = sectionId === 'hero';
+  const instant = uiInteraction === 'reduced-instant';
+  const transition = getSectionTransition(uiInteraction, isHero);
 
   const motionProps = isHero
     ? {
-        initial: { opacity: 0, y: 12 },
+        initial: instant ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 },
         animate: { opacity: 1, y: 0 },
-        transition: { duration: 0.55, ease: [0.16, 1, 0.3, 1] as const },
+        transition,
       }
     : {
-        initial: { opacity: 0, y: 28 },
-        whileInView: { opacity: 1, y: 0 },
-        viewport: { once: true, amount: 0.04 },
-        transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as const },
+        initial: instant ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 22, scale: 0.992 },
+        whileInView: { opacity: 1, y: 0, scale: 1 },
+        viewport: { once: true, amount: 'some' as const, margin: '80px 0px -24px 0px' },
+        transition,
       };
 
   const snapClass = sectionId === 'footer' ? 'snap-end scroll-mt-20' : 'snap-start scroll-mt-20';

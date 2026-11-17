@@ -117,7 +117,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-60px' }}
+          viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto mb-8 sm:mb-14 space-y-3"
         >
@@ -140,7 +140,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           <motion.div
             initial={{ opacity: 0, x: isRtl ? 30 : -30 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true, margin: '-40px' }}
+            viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-5 space-y-6"
           >
@@ -219,7 +219,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           <motion.div
             initial={{ opacity: 0, x: isRtl ? -30 : 30 }}
             whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true, margin: '-40px' }}
+            viewport={{ once: true, amount: 'some', margin: '0px 0px -16px 0px' }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-7 bg-white dark:bg-[#091A42]/90 border border-slate-200 dark:border-blue-500/30 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-lg"
           >

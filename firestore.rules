@@ -36,7 +36,12 @@ service cloud.firestore {
     }
 
     function isBootstrappedAdmin() {
-      return isVerified() && request.auth.token.email == 'rcgroup.mdp@gmail.com';
+      return isVerified()
+        && request.auth.token.email is string
+        && request.auth.token.email.lower() in [
+          'rcgroup.mdp@gmail.com',
+          'rcgroup.digitalmarketing@gmail.com'
+        ];
     }
 
     function isAdmin() {
@@ -213,13 +218,13 @@ service cloud.firestore {
       return data.keys().hasAll(['id', 'titleFa', 'titleEn', 'category', 'url', 'fileSize', 'fileType', 'uploadedAt', 'updatedAt'])
         && data.keys().hasOnly(['id', 'titleFa', 'titleEn', 'category', 'url', 'fileSize', 'fileType', 'uploadedAt', 'updatedAt'])
         && isValidId(data.id)
-        && data.titleFa is string && data.titleFa.size() <= 200
-        && data.titleEn is string && data.titleEn.size() <= 200
+        && data.titleFa is string && data.titleFa.size() <= 300
+        && data.titleEn is string && data.titleEn.size() <= 300
         && data.category in ['logo', 'hero', 'departments', 'catalog', 'campaigns', 'media', 'photo', 'brandbook', 'certificate']
         && data.url is string && data.url.size() <= 700000
-        && data.fileSize is string && data.fileSize.size() <= 40
-        && data.fileType is string && data.fileType.size() <= 60
-        && data.uploadedAt is string && data.uploadedAt.size() <= 80
+        && data.fileSize is string && data.fileSize.size() <= 60
+        && data.fileType is string && data.fileType.size() <= 100
+        && data.uploadedAt is string && data.uploadedAt.size() <= 120
         && data.updatedAt is timestamp;
     }
 
@@ -232,6 +237,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'id', 'userId', 'customerName', 'phone', 'city', 'bladeType',
           'diameter', 'teethCount', 'serviceType', 'quantity', 'estimatedPrice',
+          'originalPrice', 'discountCode', 'discountAmount',
           'status', 'createdAtLabel', 'notes', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
@@ -245,10 +251,39 @@ service cloud.firestore {
         && data.serviceType is string && data.serviceType.size() <= 160
         && data.quantity is number && data.quantity >= 1 && data.quantity <= 500
         && data.estimatedPrice is string && data.estimatedPrice.size() <= 160
+        && (!('originalPrice' in data) || (data.originalPrice is string && data.originalPrice.size() <= 160))
+        && (!('discountCode' in data) || (data.discountCode is string && data.discountCode.size() <= 64))
+        && (!('discountAmount' in data) || (data.discountAmount is string && data.discountAmount.size() <= 160))
         && data.status in ['new', 'in_progress', 'completed', 'cancelled']
         && (!('createdAtLabel' in data) || (data.createdAtLabel is string && data.createdAtLabel.size() <= 80))
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
         && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDiscountCode(data) {
+      return data.keys().hasAll([
+          'id', 'code', 'discountType', 'discountValue', 'isUsed', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'code', 'discountType', 'discountValue', 'note', 'isUsed',
+          'usedByUid', 'usedByName', 'usedByOrderId', 'usedAtLabel', 'createdAtLabel',
+          'createdAt', 'usedAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.code is string && data.code.size() >= 2 && data.code.size() <= 64 && data.code.matches('^[A-Z0-9_\\-]+$')
+        && data.discountType in ['percent', 'fixed']
+        && data.discountValue is number && data.discountValue > 0 && data.discountValue <= 1000000000
+        && (data.discountType != 'percent' || data.discountValue <= 100)
+        && (!('note' in data) || (data.note is string && data.note.size() <= 300))
+        && data.isUsed is bool
+        && (!('usedByUid' in data) || isValidId(data.usedByUid))
+        && (!('usedByName' in data) || (data.usedByName is string && data.usedByName.size() <= 120))
+        && (!('usedByOrderId' in data) || isValidId(data.usedByOrderId))
+        && (!('usedAtLabel' in data) || (data.usedAtLabel is string && data.usedAtLabel.size() <= 80))
+        && (!('createdAtLabel' in data) || (data.createdAtLabel is string && data.createdAtLabel.size() <= 80))
+        && data.createdAt is timestamp
+        && (!('usedAt' in data) || data.usedAt is timestamp)
         && data.updatedAt is timestamp;
     }
 
@@ -399,7 +434,7 @@ service cloud.firestore {
       allow update: if isValidId(slideId)
         && isAdmin()
         && isValidHeroSlide(incoming())
-        && incoming().id == existing().id
+        && incoming().id == slideId
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'order', 'titleFa', 'titleEn', 'highlightFa', 'highlightEn',
@@ -420,7 +455,7 @@ service cloud.firestore {
       allow update: if isValidId(deptId)
         && isAdmin()
         && isValidDepartment(incoming())
-        && incoming().id == existing().id
+        && incoming().id == deptId
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'key', 'order', 'titleFa', 'titleEn', 'taglineFa', 'taglineEn',
@@ -443,7 +478,7 @@ service cloud.firestore {
       allow update: if isValidId(productId)
         && isAdmin()
         && isValidProduct(incoming())
-        && incoming().id == existing().id
+        && incoming().id == productId
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'order', 'titleFa', 'titleEn', 'category', 'categoryFa', 'categoryEn',
@@ -468,7 +503,7 @@ service cloud.firestore {
       allow update: if isValidId(mediaId)
         && isAdmin()
         && isValidMediaItem(incoming())
-        && incoming().id == existing().id
+        && incoming().id == mediaId
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'order', 'type', 'typeFa', 'typeEn', 'titleFa', 'titleEn',
@@ -490,7 +525,7 @@ service cloud.firestore {
       allow update: if isValidId(campaignId)
         && isAdmin()
         && isValidCampaign(incoming())
-        && incoming().id == existing().id
+        && incoming().id == campaignId
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'order', 'slug', 'titleFa', 'titleEn', 'badgeFa', 'badgeEn',
@@ -516,12 +551,52 @@ service cloud.firestore {
       allow update: if isValidId(assetId)
         && isAdmin()
         && isValidBrandAsset(incoming())
-        && incoming().id == existing().id
+        && incoming().id == assetId
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'titleFa', 'titleEn', 'category', 'url', 'fileSize', 'fileType', 'uploadedAt', 'updatedAt'
         ]);
       allow delete: if isValidId(assetId) && isAdmin();
+    }
+
+    // Single-Use Discount Codes (Admin Registered; Point-Get Verification; Verified Atomic Redemption)
+    match /discount_codes/{codeId} {
+      allow get: if isValidId(codeId);
+      allow list: if isAdmin();
+      allow create: if isValidId(codeId)
+        && isAdmin()
+        && isValidDiscountCode(incoming())
+        && incoming().id == codeId
+        && incoming().code == codeId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(codeId)
+        && isValidDiscountCode(incoming())
+        && incoming().id == existing().id
+        && incoming().code == existing().code
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (
+            isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'discountType', 'discountValue', 'note', 'isUsed',
+              'usedByUid', 'usedByName', 'usedByOrderId', 'usedAtLabel', 'usedAt', 'updatedAt'
+            ])
+          ) || (
+            isVerified()
+            && existing().isUsed == false
+            && incoming().isUsed == true
+            && incoming().discountType == existing().discountType
+            && incoming().discountValue == existing().discountValue
+            && incoming().usedByUid == request.auth.uid
+            && incoming().usedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'isUsed', 'usedByUid', 'usedByName', 'usedByOrderId', 'usedAtLabel', 'usedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(codeId) && isAdmin();
     }
 
     // Customer Sharpening Orders (User-Owned + Admin Management)

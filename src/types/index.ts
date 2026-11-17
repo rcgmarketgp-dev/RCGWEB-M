@@ -110,9 +110,44 @@ export interface SharpeningOrder {
   serviceType: string;
   quantity: number;
   estimatedPrice: string;
+  originalPrice?: string;
+  discountCode?: string;
+  discountAmount?: string;
   status: 'new' | 'in_progress' | 'completed' | 'cancelled';
   createdAt: string;
   notes?: string;
+}
+
+export interface SharpeningPricingConfig {
+  basePricePerTooth: number;
+  fixedSetupFeePerBlade: number;
+  teethRepairExtraPerTooth: number;
+  balanceExtraPerTooth: number;
+  bladeTypeSurchargePercent: {
+    mdf: number;
+    scoring: number;
+    solid: number;
+    alu: number;
+  };
+  usdExchangeRate: number;
+  turnaroundFa?: string;
+  turnaroundEn?: string;
+  pricingNoteFa?: string;
+  pricingNoteEn?: string;
+}
+
+export interface DiscountCode {
+  id: string;
+  code: string;
+  discountType: 'percent' | 'fixed';
+  discountValue: number;
+  note?: string;
+  isUsed: boolean;
+  createdAt: string;
+  usedByUid?: string;
+  usedByName?: string;
+  usedByOrderId?: string;
+  usedAt?: string;
 }
 
 export interface Inquiry {
@@ -216,6 +251,8 @@ export interface SiteSettings {
   externalIconPack?: ExternalIconSet;
   externalCtaIcon?: string;
   externalFontEn?: string;
+  // Configurable Sharpening Price Estimator
+  sharpeningPricing?: SharpeningPricingConfig;
 }
 
 export interface CampaignLanding {

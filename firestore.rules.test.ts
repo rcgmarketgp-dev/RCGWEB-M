@@ -191,10 +191,24 @@ export const DIRTY_DOZEN_CASES: DirtyDozenCase[] = [
   },
   {
     id: 12,
-    name: 'Unscoped list query scraping all customer inquiries',
-    collectionPath: 'inquiries',
+    name: 'Unscoped list query scraping all customer inquiries or discount codes',
+    collectionPath: 'discount_codes',
     operation: 'list',
     auth: { uid: 'attacker-uid', email: 'attacker@example.com', email_verified: true },
     expectedOutcome: 'PERMISSION_DENIED',
   },
+  {
+    id: 13,
+    name: 'Discount code value tampering during customer redemption',
+    collectionPath: 'discount_codes/RCG-OFF20',
+    operation: 'update',
+    auth: { uid: 'user-1', email: 'user@example.com', email_verified: true },
+    payload: {
+      isUsed: true,
+      discountValue: 100,
+      usedByUid: 'user-1',
+    },
+    expectedOutcome: 'PERMISSION_DENIED',
+  },
 ];
+

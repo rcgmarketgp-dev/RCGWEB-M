@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   User,
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
   signOut,
@@ -15,12 +16,23 @@ import {
   auth,
   db,
   googleProvider,
+  gmailGoogleProvider,
   handleFirestoreError,
   OperationType,
 } from '../firebase';
 import { Language } from '../types';
 
 export const BOOTSTRAPPED_ADMIN_EMAIL = 'rcgroup.mdp@gmail.com';
+export const BOOTSTRAPPED_ADMIN_EMAILS = [
+  'rcgroup.mdp@gmail.com',
+  'rcgroup.digitalmarketing@gmail.com',
+] as const;
+
+export function isBootstrappedAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const normalized = email.toLowerCase();
+  return BOOTSTRAPPED_ADMIN_EMAILS.some((adminEmail) => adminEmail.toLowerCase() === normalized);
+}
 
 export interface UserProfileData {
   uid: string;
@@ -37,13 +49,23 @@ interface FirebaseContextValue {
   isAdmin: boolean;
   profile: UserProfileData | null;
   authError: string | null;
+  gmailAccessToken: string | null;
+  gmailConnecting: boolean;
+  gmailAuthError: string | null;
   clearAuthError: () => void;
+  clearGmailAuthError: () => void;
   signInWithGoogle: () => Promise<User | null>;
+  connectGmail: () => Promise<string | null>;
+  disconnectGmailToken: () => void;
   signOutUser: () => Promise<void>;
   updateUserPreferences: (lang: Language, theme: 'light' | 'dark') => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | undefined>(undefined);
+
+// Strictly in-memory OAuth access token cache (never stored in localStorage or sessionStorage)
+let cachedGmailAccessToken: string | null = null;
+let isGmailSigningIn = false;
 
 function clampStr(val: string | null | undefined, max: number, fallback = ''): string {
   const s = (val ?? fallback).trim();
@@ -62,21 +84,28 @@ export const FirebaseProvider: React.FC<{
   const [isAdmin, setIsAdmin] = useState(false);
   const [profile, setProfile] = useState<UserProfileData | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [gmailAccessToken, setGmailAccessToken] = useState<string | null>(() => cachedGmailAccessToken);
+  const [gmailConnecting, setGmailConnecting] = useState(false);
+  const [gmailAuthError, setGmailAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (!firebaseUser) {
+        cachedGmailAccessToken = null;
+        setGmailAccessToken(null);
         setIsAdmin(false);
         setProfile(null);
         setAuthReady(true);
         return;
       }
+      if (!isGmailSigningIn && cachedGmailAccessToken) {
+        setGmailAccessToken(cachedGmailAccessToken);
+      }
 
       try {
         const adminRole = Boolean(
-          firebaseUser.emailVerified &&
-            firebaseUser.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase()
+          firebaseUser.emailVerified && isBootstrappedAdminEmail(firebaseUser.email)
         );
         setIsAdmin(adminRole);
 
@@ -183,10 +212,44 @@ export const FirebaseProvider: React.FC<{
     }
   };
 
+  const connectGmail = async (): Promise<string | null> => {
+    setGmailAuthError(null);
+    setGmailConnecting(true);
+    isGmailSigningIn = true;
+    try {
+      const result = await signInWithPopup(auth, gmailGoogleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const token = credential?.accessToken ?? null;
+      if (!token) {
+        throw new Error('Failed to retrieve Gmail OAuth access token from Google sign-in.');
+      }
+      cachedGmailAccessToken = token;
+      setGmailAccessToken(token);
+      return token;
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'Unable to connect Gmail via Google Sign-In';
+      if (!msg.includes('popup-closed-by-user')) {
+        setGmailAuthError(msg);
+      }
+      return null;
+    } finally {
+      isGmailSigningIn = false;
+      setGmailConnecting(false);
+    }
+  };
+
+  const disconnectGmailToken = () => {
+    cachedGmailAccessToken = null;
+    setGmailAccessToken(null);
+  };
+
   const signOutUser = async (): Promise<void> => {
     setAuthLoading(true);
     try {
       await signOut(auth);
+      cachedGmailAccessToken = null;
+      setGmailAccessToken(null);
       setProfile(null);
       setIsAdmin(false);
     } finally {
@@ -239,8 +302,14 @@ export const FirebaseProvider: React.FC<{
         isAdmin,
         profile,
         authError,
+        gmailAccessToken,
+        gmailConnecting,
+        gmailAuthError,
         clearAuthError: () => setAuthError(null),
+        clearGmailAuthError: () => setGmailAuthError(null),
         signInWithGoogle,
+        connectGmail,
+        disconnectGmailToken,
         signOutUser,
         updateUserPreferences,
       }}

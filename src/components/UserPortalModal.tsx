@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Language,
   SharpeningOrder,
   Inquiry,
   CampaignInquiry,
 } from '../types';
-import { BOOTSTRAPPED_ADMIN_EMAIL, useFirebase } from '../context/FirebaseContext';
+import { isBootstrappedAdminEmail, useFirebase } from '../context/FirebaseContext';
 import { updateSharpeningOrderInFirestore } from '../services/firestoreSync';
+import { GmailWorkspacePanel } from './GmailWorkspacePanel';
 import {
   X,
   LogOut,
@@ -18,12 +19,16 @@ import {
   Flame,
   UserCheck,
   Save,
+  Mail,
 } from 'lucide-react';
+
+export type UserPortalTab = 'orders' | 'inquiries' | 'campaigns' | 'gmail';
 
 interface UserPortalModalProps {
   isOpen: boolean;
   onClose: () => void;
   language: Language;
+  initialTab?: UserPortalTab;
   sharpeningOrders: SharpeningOrder[];
   inquiries: Inquiry[];
   campaignInquiries: CampaignInquiry[];
@@ -34,23 +39,67 @@ export const UserPortalModal: React.FC<UserPortalModalProps> = ({
   isOpen,
   onClose,
   language,
+  initialTab = 'orders',
   sharpeningOrders,
   inquiries,
   campaignInquiries,
   onOpenAdmin,
 }) => {
-  const { user, isAdmin, signOutUser } = useFirebase();
-  const [activeTab, setActiveTab] = useState<'orders' | 'inquiries' | 'campaigns'>('orders');
+  const { user, isAdmin, gmailAccessToken, signOutUser } = useFirebase();
+  const [activeTab, setActiveTab] = useState<UserPortalTab>(initialTab);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
-  if (!isOpen || !user) return null;
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  if (!isOpen) return null;
 
   const isRtl = language === 'fa';
+
+  if (!user) {
+    if (activeTab !== 'gmail') return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-2.5 sm:p-4">
+        <div className="w-full max-w-4xl max-h-[92dvh] flex flex-col bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900/60 rounded-3xl shadow-2xl overflow-hidden text-slate-900 dark:text-white">
+          <div className="bg-gradient-to-r from-[#091A42] via-[#0E245E] to-[#144AE0] text-white p-4 sm:p-5 flex items-center justify-between gap-3 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#FD5202] flex items-center justify-center shrink-0">
+                <Mail className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm sm:text-base font-extrabold">
+                  {isRtl ? 'مرکز ارتباطات جیمیل (Gmail)' : 'Gmail Workspace'}
+                </h2>
+                <p className="text-[11px] text-[#A6D6FE]">
+                  {isRtl
+                    ? 'خواندن، جستجو و ارسال ایمیل با حساب گوگل'
+                    : 'Read, search, and send emails with your Google account'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-white/15 hover:bg-white/25 transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+            <GmailWorkspacePanel language={language} />
+          </div>
+        </div>
+      </div>
+    );
+  }
   const isOwnerAdmin = Boolean(
     user.emailVerified &&
-      user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase() &&
+      isBootstrappedAdminEmail(user.email) &&
       isAdmin
   );
 
@@ -95,7 +144,7 @@ export const UserPortalModal: React.FC<UserPortalModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-2.5 sm:p-4">
-      <div className="w-full max-w-3xl max-h-[92dvh] flex flex-col bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900/60 rounded-3xl shadow-2xl overflow-hidden text-slate-900 dark:text-white">
+      <div className={`w-full ${activeTab === 'gmail' ? 'max-w-5xl' : 'max-w-3xl'} max-h-[92dvh] flex flex-col bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900/60 rounded-3xl shadow-2xl overflow-hidden text-slate-900 dark:text-white transition-all`}>
         {/* Header Profile Banner */}
         <div className="relative bg-gradient-to-r from-[#091A42] via-[#0E245E] to-[#144AE0] text-white p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0 rtl:pl-10 ltr:pr-10 sm:rtl:pl-0 sm:ltr:pr-0">
@@ -206,6 +255,21 @@ export const UserPortalModal: React.FC<UserPortalModalProps> = ({
               {isRtl ? `کمپین‌های من (${campaignInquiries.length})` : `Campaign Leads (${campaignInquiries.length})`}
             </span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('gmail')}
+            className={`whitespace-nowrap shrink-0 min-h-[40px] flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+              activeTab === 'gmail'
+                ? 'bg-[#144AE0] text-white shadow-sm'
+                : 'bg-white dark:bg-blue-950/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-blue-800/50'
+            }`}
+          >
+            <Mail className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'صندوق جیمیل' : 'Gmail'}</span>
+            {gmailAccessToken && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            )}
+          </button>
         </div>
 
         {/* Content Area */}
@@ -242,10 +306,21 @@ export const UserPortalModal: React.FC<UserPortalModalProps> = ({
                       </div>
 
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300">
-                        <span>
-                          {order.serviceType} × {order.quantity} —{' '}
-                          <strong className="text-[#FD5202]">{order.estimatedPrice}</strong>
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>
+                            {order.serviceType} × {order.quantity} —{' '}
+                            {order.originalPrice && (
+                              <span className="line-through text-slate-400 mx-1">{order.originalPrice}</span>
+                            )}
+                            <strong className="text-[#FD5202]">{order.estimatedPrice}</strong>
+                          </span>
+                          {order.discountCode && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-mono font-bold">
+                              {order.discountCode}
+                              {order.discountAmount ? ` (-${order.discountAmount})` : ''}
+                            </span>
+                          )}
+                        </div>
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                           <Clock className="w-3 h-3" />
                           {order.createdAt}
@@ -363,6 +438,10 @@ export const UserPortalModal: React.FC<UserPortalModalProps> = ({
                 })
               )}
             </>
+          )}
+
+          {activeTab === 'gmail' && (
+            <GmailWorkspacePanel language={language} />
           )}
         </div>
       </div>

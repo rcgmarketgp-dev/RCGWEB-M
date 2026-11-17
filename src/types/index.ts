@@ -72,6 +72,7 @@ export interface Product {
   efficiencyRating?: number; // e.g. 95 (%)
   qualityBadgeFa?: string;
   qualityBadgeEn?: string;
+  tags?: string[];
   stations?: ProductStation[];
 }
 
@@ -94,6 +95,8 @@ export interface MediaItem {
   videoUrl?: string;
   authorFa: string;
   authorEn: string;
+  isActive?: boolean;
+  tags?: string[];
 }
 
 export interface SharpeningOrder {
@@ -141,6 +144,35 @@ export interface HeroSlide {
   secondaryCtaLink?: string;
 }
 
+export type UiDesignPreset =
+  | 'rcg-corporate'
+  | 'material-you'
+  | 'apple-glass'
+  | 'carbon-industrial'
+  | 'swiss-minimal';
+
+export type ButtonThemeStyle =
+  | 'solid-gradient'
+  | 'pill-soft'
+  | 'sharp-outline'
+  | 'glass-frost'
+  | 'tactile-3d';
+
+export type UiInteractionMode =
+  | 'spring-playful'
+  | 'corporate-smooth'
+  | 'snappy-tech'
+  | 'reduced-instant';
+
+export type ScrollSnapBehavior = 'proximity' | 'mandatory' | 'off';
+
+export type ExternalIconSet =
+  | 'lucide-default'
+  | 'phosphor-duotone'
+  | 'iconify-mdi'
+  | 'iconify-tabler'
+  | 'iconify-solar';
+
 export interface SiteSettings {
   companyNameFa: string;
   companyNameEn: string;
@@ -176,6 +208,14 @@ export interface SiteSettings {
   headerCtaTextFa?: string;
   headerCtaTextEn?: string;
   headerCtaLink?: string;
+  // UI & Button Theme + External Resources
+  uiPreset?: UiDesignPreset;
+  buttonStyle?: ButtonThemeStyle;
+  uiInteraction?: UiInteractionMode;
+  scrollSnapMode?: ScrollSnapBehavior;
+  externalIconPack?: ExternalIconSet;
+  externalCtaIcon?: string;
+  externalFontEn?: string;
 }
 
 export interface CampaignLanding {

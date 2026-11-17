@@ -692,6 +692,13 @@ export const initialSiteSettings: SiteSettings = {
   headerCtaTextFa: 'درخواست مشاوره و قیمت',
   headerCtaTextEn: 'Request Quote',
   headerCtaLink: '#consultation-modal',
+  uiPreset: 'rcg-corporate',
+  buttonStyle: 'solid-gradient',
+  uiInteraction: 'corporate-smooth',
+  scrollSnapMode: 'proximity',
+  externalIconPack: 'lucide-default',
+  externalCtaIcon: '',
+  externalFontEn: 'Plus Jakarta Sans',
 };
 
 export const initialCampaigns = [

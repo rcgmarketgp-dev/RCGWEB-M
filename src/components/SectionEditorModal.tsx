@@ -14,7 +14,9 @@ import {
 } from '../types';
 import { RcgLogo } from './RcgLogo';
 import { GalleryPickerModal } from './GalleryPickerModal';
+import { ImageCropperModal } from './ImageCropperModal';
 import { formatAssetBytes } from '../utils/assetCategories';
+import { CROP_PRESETS, CropPresetSpec, OptimizedImageResult } from '../utils/imageOptimize';
 import {
   X,
   Save,
@@ -30,6 +32,7 @@ import {
   Moon,
   FolderOpen,
   Layers,
+  Crop,
 } from 'lucide-react';
 
 interface SectionEditorModalProps {
@@ -50,6 +53,7 @@ interface SectionEditorModalProps {
   onUpdateCampaigns: (campaigns: CampaignLanding[]) => void;
   onUpdateMediaItems?: (items: MediaItem[]) => void;
   onArchiveAsset: (asset: Omit<BrandAsset, 'id' | 'uploadedAt'>) => void;
+  onBeforeCommit?: (sectionId: SectionId) => void;
   onClose: () => void;
   onNotify: (msg: string) => void;
 }
@@ -98,6 +102,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
   onUpdateCampaigns,
   onUpdateMediaItems,
   onArchiveAsset,
+  onBeforeCommit,
   onClose,
   onNotify,
 }) => {
@@ -115,6 +120,16 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
   const [galleryPicker, setGalleryPicker] = useState<{
     category: BrandAssetCategory | 'all';
     onPick: (url: string) => void;
+  } | null>(null);
+  const [cropSession, setCropSession] = useState<{
+    sourceUrl: string;
+    fileName: string;
+    originalSizeBytes?: number;
+    archiveCategory: BrandAssetCategory;
+    archiveLabel: string;
+    preset: CropPresetSpec;
+    shouldArchive: boolean;
+    onApply: (dataUrl: string) => void;
   } | null>(null);
 
   useEffect(() => {
@@ -136,6 +151,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
     setActiveCampIdx(0);
     setDraftMedia(mediaItems.map((m) => ({ ...m })));
     setActiveMediaIdx(0);
+    setCropSession(null);
   }, [isOpen, sectionId, settings, sectionsConfig, heroSlides, departments, campaigns, mediaItems]);
 
   if (!isOpen || !sectionId) return null;
@@ -147,6 +163,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
     file: File | undefined,
     archiveCategory: BrandAssetCategory,
     archiveLabel: string,
+    cropPreset: CropPresetSpec,
     onLoaded: (dataUrl: string) => void
   ) => {
     if (!file) return;
@@ -154,25 +171,65 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
     reader.onload = () => {
       if (typeof reader.result === 'string') {
         const dataUrl = reader.result;
-        onLoaded(dataUrl);
         const cleanName = file.name.replace(/\.[^/.]+$/, '');
-        onArchiveAsset({
-          titleFa: `${archiveLabel} — ${cleanName}`,
-          titleEn: `${cleanName} (${archiveCategory})`,
-          category: archiveCategory,
-          url: dataUrl,
-          fileSize: formatAssetBytes(file.size),
-          fileType: file.type
-            ? `${file.type.replace('image/', '').toUpperCase()} Image`
-            : 'Uploaded Image',
+
+        // Keep vector SVGs untouched without rasterizing
+        if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
+          onLoaded(dataUrl);
+          onArchiveAsset({
+            titleFa: `${archiveLabel} — ${cleanName}`,
+            titleEn: `${cleanName} (${archiveCategory})`,
+            category: archiveCategory,
+            url: dataUrl,
+            fileSize: formatAssetBytes(file.size),
+            fileType: 'SVG Vector',
+          });
+          return;
+        }
+
+        // Open interactive cropper & optimizer for all raster uploads
+        setCropSession({
+          sourceUrl: dataUrl,
+          fileName: cleanName,
+          originalSizeBytes: file.size,
+          archiveCategory,
+          archiveLabel,
+          preset: cropPreset,
+          shouldArchive: true,
+          onApply: onLoaded,
         });
       }
     };
     reader.readAsDataURL(file);
   };
 
+  const handleCropConfirmed = (result: OptimizedImageResult) => {
+    if (!cropSession) return;
+    cropSession.onApply(result.dataUrl);
+
+    if (cropSession.shouldArchive) {
+      const extLabel = result.mimeType.replace('image/', '').toUpperCase();
+      onArchiveAsset({
+        titleFa: `${cropSession.archiveLabel} — ${cropSession.fileName}`,
+        titleEn: `${cropSession.fileName} (${result.width}×${result.height})`,
+        category: cropSession.archiveCategory,
+        url: result.dataUrl,
+        fileSize: formatAssetBytes(result.byteSize),
+        fileType: `${extLabel} (${result.width}×${result.height})`,
+      });
+    }
+
+    onNotify(
+      isRtl
+        ? `تصویر با ابعاد ${result.width}×${result.height} و حجم ${formatAssetBytes(result.byteSize)} برش و بهینه‌سازی شد`
+        : `Image cropped & optimized to ${result.width}×${result.height} (${formatAssetBytes(result.byteSize)})`
+    );
+    setCropSession(null);
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    onBeforeCommit?.(sectionId);
 
     if (sectionId === 'header') {
       onUpdateSettings(draftSettings);
@@ -257,98 +314,130 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
     imageUrl: string | undefined,
     archiveCategory: BrandAssetCategory,
     onChange: (url: string) => void,
-    compact = false
-  ) => (
-    <div
-      className={`${
-        compact ? 'p-3' : 'p-4'
-      } rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-2.5`}
-    >
-      <label className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
-        <ImageIcon className="w-3.5 h-3.5 text-[#FD5202]" />
-        <span>{label}</span>
-      </label>
+    compact = false,
+    cropPreset: CropPresetSpec = CROP_PRESETS.BANNER_16_9
+  ) => {
+    const canCropCurrent =
+      !!imageUrl && !imageUrl.startsWith('data:image/svg+xml') && !/\.svg(\?.*)?$/i.test(imageUrl);
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-        <div
-          className={`${
-            compact ? 'w-full sm:w-24 h-16' : 'w-full sm:w-32 h-22'
-          } rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-blue-800 shrink-0`}
-        >
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt="Preview"
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px]">
-              No Image
-            </div>
-          )}
+    return (
+      <div
+        className={`${
+          compact ? 'p-3' : 'p-4'
+        } rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-2.5`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
+            <ImageIcon className="w-3.5 h-3.5 text-[#FD5202]" />
+            <span>{label}</span>
+          </label>
+          <span className="px-2 py-0.5 rounded-md bg-blue-100/80 dark:bg-blue-950 text-[#144AE0] dark:text-[#A6D6FE] text-[10px] font-mono font-bold border border-blue-200/70 dark:border-blue-800/70">
+            {cropPreset.shortBadge}
+          </span>
         </div>
 
-        <div className="flex-1 w-full space-y-2">
-          <input
-            type="text"
-            value={imageUrl || ''}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="/assets/... or https://..."
-            className={`${inputClass} font-mono`}
-            dir="ltr"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-[11px] font-bold cursor-pointer transition-colors">
-              <Upload className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'آپلود تصویر (بایگانی خودکار)' : 'Upload & Archive'}</span>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  handleFileUpload(e.target.files?.[0], archiveCategory, label, onChange);
-                  e.target.value = '';
-                }}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div
+            className={`${
+              compact ? 'w-full sm:w-24 h-16' : 'w-full sm:w-32 h-22'
+            } rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-blue-800 shrink-0`}
+          >
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt="Preview"
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
               />
-            </label>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px]">
+                No Image
+              </div>
+            )}
+          </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setGalleryPicker({
-                  category: archiveCategory,
-                  onPick: onChange,
-                })
-              }
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#091A42] hover:border-[#FD5202] text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-blue-800 text-[11px] font-bold cursor-pointer transition-colors"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
-              <span>{isRtl ? 'انتخاب از گالری' : 'Pick from Gallery'}</span>
-            </button>
+          <div className="flex-1 w-full space-y-2">
+            <input
+              type="text"
+              value={imageUrl || ''}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="/assets/... or https://..."
+              className={`${inputClass} font-mono`}
+              dir="ltr"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-[11px] font-bold cursor-pointer transition-colors">
+                <Upload className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'آپلود و برش هوشمند' : 'Upload & Crop'}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    handleFileUpload(e.target.files?.[0], archiveCategory, label, cropPreset, onChange);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+
+              {canCropCurrent && imageUrl && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCropSession({
+                      sourceUrl: imageUrl,
+                      fileName: 'cropped-asset',
+                      archiveCategory,
+                      archiveLabel: label,
+                      preset: cropPreset,
+                      shouldArchive: true,
+                      onApply: onChange,
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-50 dark:bg-orange-950/40 hover:border-[#FD5202] text-[#FD5202] border border-orange-200 dark:border-orange-800/70 text-[11px] font-bold cursor-pointer transition-colors"
+                >
+                  <Crop className="w-3.5 h-3.5" />
+                  <span>{isRtl ? 'برش و تنظیم کادر' : 'Crop & Fit'}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() =>
+                  setGalleryPicker({
+                    category: archiveCategory,
+                    onPick: onChange,
+                  })
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#091A42] hover:border-[#FD5202] text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-blue-800 text-[11px] font-bold cursor-pointer transition-colors"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+                <span>{isRtl ? 'انتخاب از گالری' : 'Pick from Gallery'}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-5 bg-black/75 backdrop-blur-sm">
       <form
         onSubmit={handleSave}
-        className="w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col text-slate-900 dark:text-white"
+        className="w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl shadow-2xl overflow-hidden max-h-[94dvh] flex flex-col text-slate-900 dark:text-white"
       >
         {/* Modal Header */}
-        <div className="px-6 py-4 bg-slate-50 dark:bg-[#060F26] border-b border-slate-200 dark:border-blue-900/60 flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-[#FD5202] text-white shadow-sm">
-              <SlidersHorizontal className="w-5 h-5" />
+        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 dark:bg-[#060F26] border-b border-slate-200 dark:border-blue-900/60 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-[#FD5202] text-white shadow-sm shrink-0">
+              <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-[#091A42] dark:text-white">
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-lg font-black text-[#091A42] dark:text-white truncate">
                 {isRtl ? `تنظیمات بخش: ${meta.fa}` : `Edit Section: ${meta.en}`}
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-[#A6D6FE]">
+              <p className="text-[11px] text-slate-500 dark:text-[#A6D6FE] truncate">
                 {isRtl
                   ? 'تغییر مستقیم متن‌ها، لوگو (لایت و دارک)، تصاویر و لینک کلیدها'
                   : 'Customize bilingual texts, light/dark logos, photos, and button links'}
@@ -359,14 +448,14 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-blue-800 text-slate-500 hover:text-[#FD5202] cursor-pointer"
+            className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-blue-800 text-slate-500 hover:text-[#FD5202] cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 sm:space-y-6 flex-1">
           {/* HEADER & SITE-WIDE LIGHT/DARK LOGO SETTINGS */}
           {sectionId === 'header' && (
             <div className="space-y-5">
@@ -474,7 +563,9 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                     isRtl ? 'تصویر لوگو برای حالت روشن (Light Mode)' : 'Custom Logo for Light Background',
                     draftSettings.customLogoUrl,
                     'logo',
-                    (url) => setDraftSettings({ ...draftSettings, customLogoUrl: url, logoType: 'custom' })
+                    (url) => setDraftSettings({ ...draftSettings, customLogoUrl: url, logoType: 'custom' }),
+                    false,
+                    CROP_PRESETS.LOGO_FREE
                   )
                 ) : (
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-4">
@@ -586,7 +677,9 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                       ...draftSettings,
                       customLogoDarkUrl: url,
                       logoType: 'custom',
-                    })
+                    }),
+                  false,
+                  CROP_PRESETS.LOGO_FREE
                 )
               ) : (
                 <div className="p-4 rounded-2xl bg-[#060F26] border border-blue-900/70 space-y-4 text-white">
@@ -796,7 +889,9 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                 isRtl ? 'تصویر پس‌زمینه پارالاکس بخش هیرو' : 'Hero Parallax Background Backdrop',
                 draftSection.image,
                 'hero',
-                (url) => setDraftSection({ ...draftSection, image: url })
+                (url) => setDraftSection({ ...draftSection, image: url }),
+                false,
+                CROP_PRESETS.HERO_BACKDROP_16_9
               )}
 
               {/* Slide Selector Tabs */}
@@ -952,7 +1047,9 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                 (url) =>
                   setDraftSlides(
                     draftSlides.map((s, i) => (i === activeSlideIdx ? { ...s, image: url } : s))
-                  )
+                  ),
+                false,
+                CROP_PRESETS.HERO_SLIDE_16_11
               )}
 
               {/* Primary CTA Text & Link */}
@@ -1243,7 +1340,9 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                   isRtl ? 'تصویر اختصاصی این بخش' : 'Section Showcase Image',
                   draftSection.image,
                   'photo',
-                  (url) => setDraftSection({ ...draftSection, image: url })
+                  (url) => setDraftSection({ ...draftSection, image: url }),
+                  false,
+                  sectionId === 'about' ? CROP_PRESETS.ABOUT_16_10 : CROP_PRESETS.HERO_BACKDROP_16_9
                 )}
 
               {/* Button Label & Link for Sections with Main CTA */}
@@ -1376,7 +1475,9 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                     (url) =>
                       setDraftDepts(
                         draftDepts.map((d, i) => (i === activeDeptIdx ? { ...d, image: url } : d))
-                      )
+                      ),
+                    false,
+                    CROP_PRESETS.DEPT_MAIN_16_7
                   )}
 
                   {/* Sub-Section Title + 3 Mini Cards Photos & Titles */}
@@ -1491,7 +1592,8 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                                     : d
                                 )
                               ),
-                            true
+                            true,
+                            CROP_PRESETS.DEPT_SUBCARD_4_3
                           )}
                         </div>
                       ))}
@@ -1598,7 +1700,9 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                         draftCampaigns.map((c, i) =>
                           i === activeCampIdx ? { ...c, heroImage: url } : c
                         )
-                      )
+                      ),
+                    false,
+                    CROP_PRESETS.BANNER_16_9
                   )}
                 </div>
               )}
@@ -1634,7 +1738,9 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                         draftMedia.map((m, i) =>
                           i === activeMediaIdx ? { ...m, image: url } : m
                         )
-                      )
+                      ),
+                    false,
+                    CROP_PRESETS.BANNER_16_9
                   )}
                 </div>
               )}
@@ -1643,20 +1749,20 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 bg-slate-50 dark:bg-[#060F26] border-t border-slate-200 dark:border-blue-900/60 flex items-center justify-end gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 dark:bg-[#060F26] border-t border-slate-200 dark:border-blue-900/60 grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2.5 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-blue-800 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer"
+            className="px-4 sm:px-5 py-2.5 min-h-[42px] rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-blue-800 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer text-center"
           >
             {isRtl ? 'انصراف' : 'Cancel'}
           </button>
           <button
             type="submit"
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold shadow-md cursor-pointer"
+            className="flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 min-h-[42px] rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold shadow-md cursor-pointer"
           >
-            <Save className="w-4 h-4" />
-            <span>{isRtl ? 'ذخیره و اعمال در سایت' : 'Save & Apply Changes'}</span>
+            <Save className="w-4 h-4 shrink-0" />
+            <span className="truncate">{isRtl ? 'ذخیره و اعمال در سایت' : 'Save & Apply'}</span>
           </button>
         </div>
       </form>
@@ -1669,6 +1775,19 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
           defaultCategory={galleryPicker.category}
           onSelect={galleryPicker.onPick}
           onClose={() => setGalleryPicker(null)}
+        />
+      )}
+
+      {cropSession && (
+        <ImageCropperModal
+          isOpen={!!cropSession}
+          sourceUrl={cropSession.sourceUrl}
+          titleLabel={cropSession.archiveLabel}
+          originalSizeBytes={cropSession.originalSizeBytes}
+          preset={cropSession.preset}
+          language={language}
+          onConfirm={handleCropConfirmed}
+          onClose={() => setCropSession(null)}
         />
       )}
     </div>

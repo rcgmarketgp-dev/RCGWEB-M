@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Inquiry, Language, SiteSettings, SectionCustomization } from '../types';
 import { translations } from '../utils/i18n';
-import { MapPin, Phone, Mail, Clock, MessageSquare, Send, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useFirebase } from '../context/FirebaseContext';
+import { GoogleBrandIcon } from './GoogleBrandIcon';
+import { ExternalIconBadge } from './ExternalIconBadge';
+import { MapPin, Phone, Mail, Clock, MessageSquare, Send, CheckCircle2, AlertCircle, UserCheck } from 'lucide-react';
 import { WhatsAppBrandIcon } from './SocialBrandIcons';
 import { motion } from 'motion/react';
 
@@ -34,7 +37,10 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 }) => {
   const t = translations[language].contact;
   const isRtl = language === 'fa';
+  const { user, signInWithGoogle } = useFirebase();
   const [isSuccess, setIsSuccess] = useState(false);
+  const [submitNotice, setSubmitNotice] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const {
     register,
@@ -44,9 +50,9 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     formState: { errors },
   } = useForm<ContactFormInputs>({
     defaultValues: {
-      name: '',
+      name: user?.displayName || '',
       phone: '',
-      email: '',
+      email: user?.email || '',
       department: prefilledDepartment || 'فروش و بازرگانی (Sales)',
       subject: prefilledSubject || '',
       message: '',
@@ -56,14 +62,32 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   useEffect(() => {
     if (prefilledDepartment) setValue('department', prefilledDepartment);
     if (prefilledSubject) setValue('subject', prefilledSubject);
-  }, [prefilledDepartment, prefilledSubject, setValue]);
+    if (user?.displayName) setValue('name', user.displayName);
+    if (user?.email) setValue('email', user.email);
+  }, [prefilledDepartment, prefilledSubject, user?.displayName, user?.email, setValue]);
 
-  const onSubmit = (data: ContactFormInputs) => {
+  const onSubmit = async (data: ContactFormInputs) => {
+    setSubmitNotice(null);
+    let activeUser = user;
+    if (!activeUser) {
+      setSubmitting(true);
+      activeUser = await signInWithGoogle();
+      setSubmitting(false);
+      if (!activeUser) {
+        setSubmitNotice(
+          isRtl
+            ? 'برای ثبت آنلاین درخواست و مشاهده پاسخ در سوابق، ورود با گوگل الزامی است.'
+            : 'Please sign in with Google to submit and track your inquiry.'
+        );
+        return;
+      }
+    }
+
     const newInquiry: Inquiry = {
       id: `INQ-${Math.floor(100 + Math.random() * 900)}`,
       name: data.name.trim(),
       phone: data.phone.trim(),
-      email: data.email.trim() || undefined,
+      email: data.email.trim() || activeUser.email || undefined,
       department: data.department,
       subject: data.subject.trim() || (isRtl ? 'درخواست مشاوره عمومی' : 'General Advisory Request'),
       message: data.message.trim(),
@@ -84,7 +108,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   return (
     <section
       id="contact"
-      className="py-20 sm:py-24 bg-slate-50 dark:bg-[#060F26] text-slate-900 dark:text-white relative overflow-hidden"
+      className="py-14 sm:py-20 lg:py-24 bg-slate-50 dark:bg-[#060F26] text-slate-900 dark:text-white relative overflow-hidden"
     >
       <div className="absolute inset-0 opacity-30 dark:opacity-15 rcg-pattern-triangles dark:rcg-pattern-triangles-dark pointer-events-none" />
 
@@ -95,23 +119,23 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-60px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="text-center max-w-3xl mx-auto mb-14 space-y-3"
+          className="text-center max-w-3xl mx-auto mb-8 sm:mb-14 space-y-3"
         >
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 dark:bg-[#FD5202]/15 border border-orange-200 dark:border-[#FD5202]/40 text-xs font-bold text-[#FD5202]">
+          <div className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-full bg-orange-50 dark:bg-[#FD5202]/15 border border-orange-200 dark:border-[#FD5202]/40 text-[11px] sm:text-xs font-bold text-[#FD5202]">
             <MessageSquare className="w-3.5 h-3.5" />
             <span>{isRtl ? sectionConfig?.badgeFa || 'مشاوره و پشتیبانی فنی' : sectionConfig?.badgeEn || 'Advisory & Technical Support'}</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#091A42] dark:text-white">
+          <h2 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#091A42] dark:text-white">
             {isRtl ? sectionConfig?.titleFa || t.title : sectionConfig?.titleEn || t.title}
           </h2>
 
-          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto">
+          <p className="text-sm sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto">
             {isRtl ? sectionConfig?.subtitleFa || t.subtitle : sectionConfig?.subtitleEn || t.subtitle}
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-10 items-start">
           {/* Contact Details Card */}
           <motion.div
             initial={{ opacity: 0, x: isRtl ? 30 : -30 }}
@@ -120,12 +144,12 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="lg:col-span-5 space-y-6"
           >
-            <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900/50 space-y-6 shadow-lg">
+            <div className="p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900/50 space-y-5 sm:space-y-6 shadow-lg">
               <div className="flex items-start gap-3.5">
-                <div className="p-3 rounded-xl bg-orange-50 dark:bg-blue-950 border border-orange-200 dark:border-blue-800 text-[#FD5202] shrink-0">
+                <div className="p-2.5 sm:p-3 rounded-xl bg-orange-50 dark:bg-blue-950 border border-orange-200 dark:border-blue-800 text-[#FD5202] shrink-0">
                   <MapPin className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <h4 className="text-sm font-bold text-[#091A42] dark:text-white">{t.addressTitle}</h4>
                   <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
                     {isRtl ? settings.addressFa : settings.addressEn}
@@ -134,27 +158,27 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
               </div>
 
               <div className="flex items-start gap-3.5">
-                <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] shrink-0">
+                <div className="p-2.5 sm:p-3 rounded-xl bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] shrink-0">
                   <Phone className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <h4 className="text-sm font-bold text-[#091A42] dark:text-white">{t.phoneTitle}</h4>
                   <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 space-y-1 font-mono tabular-nums">
                     <p className="hover:text-[#FD5202] transition-colors">
-                      <a href={`tel:${settings.phonePrimary}`}>{settings.phonePrimary}</a>
+                      <a href={`tel:${settings.phonePrimary}`} className="inline-block py-0.5">{settings.phonePrimary}</a>
                     </p>
                     <p className="hover:text-[#FD5202] transition-colors">
-                      <a href={`tel:${settings.phoneSecondary}`}>{settings.phoneSecondary}</a>
+                      <a href={`tel:${settings.phoneSecondary}`} className="inline-block py-0.5">{settings.phoneSecondary}</a>
                     </p>
                   </div>
                 </div>
               </div>
 
               <div className="flex items-start gap-3.5">
-                <div className="p-3 rounded-xl bg-orange-50 dark:bg-blue-950 border border-orange-200 dark:border-blue-800 text-[#FD5202] shrink-0">
+                <div className="p-2.5 sm:p-3 rounded-xl bg-orange-50 dark:bg-blue-950 border border-orange-200 dark:border-blue-800 text-[#FD5202] shrink-0">
                   <Clock className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <h4 className="text-sm font-bold text-[#091A42] dark:text-white">{t.hoursTitle}</h4>
                   <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
                     {isRtl ? settings.workingHoursFa : settings.workingHoursEn}
@@ -163,12 +187,12 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
               </div>
 
               <div className="flex items-start gap-3.5">
-                <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] shrink-0">
+                <div className="p-2.5 sm:p-3 rounded-xl bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] shrink-0">
                   <Mail className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <h4 className="text-sm font-bold text-[#091A42] dark:text-white">{isRtl ? 'پست الکترونیک' : 'Official Email'}</h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-mono">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-mono break-all">
                     <a href={`mailto:${settings.email}`} className="hover:text-[#FD5202] transition-colors">
                       {settings.email}
                     </a>
@@ -182,9 +206,9 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   href={`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full py-3.5 px-4 rounded-xl bg-[#25D366] hover:bg-[#20BA5A] text-white font-bold text-xs sm:text-sm shadow-md transition-all cursor-pointer"
+                  className="flex items-center justify-center gap-2 w-full min-h-[46px] py-3.5 px-4 rounded-xl bg-[#25D366] hover:bg-[#20BA5A] text-white font-bold text-xs sm:text-sm shadow-md transition-all cursor-pointer"
                 >
-                  <WhatsAppBrandIcon className="w-4 h-4" />
+                  <WhatsAppBrandIcon className="w-4 h-4 shrink-0" />
                   <span>{t.whatsappBtn}</span>
                 </a>
               </div>
@@ -197,7 +221,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true, margin: '-40px' }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="lg:col-span-7 bg-white dark:bg-[#091A42]/90 border border-slate-200 dark:border-blue-500/30 rounded-3xl p-6 sm:p-8 shadow-lg"
+            className="lg:col-span-7 bg-white dark:bg-[#091A42]/90 border border-slate-200 dark:border-blue-500/30 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-lg"
           >
             {isSuccess ? (
               <div className="py-12 text-center space-y-4">
@@ -324,13 +348,48 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   )}
                 </div>
 
+                {submitNotice && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitNotice}</span>
+                  </p>
+                )}
+
                 <button
                   type="submit"
-                  className="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#FD5202] to-[#E04600] hover:from-[#E04600] hover:to-[#C03C00] shadow-lg shadow-orange-500/25 dark:shadow-orange-950/40 transition-all cursor-pointer"
+                  disabled={submitting}
+                  className="rcg-btn-primary w-full min-h-[48px] flex items-center justify-center gap-2 py-3.5 px-4 sm:px-6 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-[#FD5202] to-[#E04600] hover:from-[#E04600] hover:to-[#C03C00] shadow-lg shadow-orange-500/25 dark:shadow-orange-950/40 cursor-pointer disabled:opacity-60 text-center"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>{isRtl ? sectionConfig?.ctaTextFa || t.send : sectionConfig?.ctaTextEn || t.send}</span>
+                  {user ? (
+                    <ExternalIconBadge
+                      iconName={settings.externalCtaIcon}
+                      className="w-4 h-4 shrink-0"
+                      invertColor={true}
+                      fallback={<Send className="w-4 h-4 shrink-0" />}
+                    />
+                  ) : (
+                    <GoogleBrandIcon className="w-4 h-4 bg-white rounded-full p-0.5 shrink-0" />
+                  )}
+                  <span>
+                    {user
+                      ? isRtl
+                        ? sectionConfig?.ctaTextFa || t.send
+                        : sectionConfig?.ctaTextEn || t.send
+                      : isRtl
+                      ? 'ورود با گوگل و ارسال درخواست'
+                      : 'Sign in with Google & Send Request'}
+                  </span>
                 </button>
+                {user && (
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center justify-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>
+                      {isRtl
+                        ? `درخواست در حساب تاییدشده ${user.email} ثبت می‌شود`
+                        : `Linked to verified account (${user.email})`}
+                    </span>
+                  </p>
+                )}
               </form>
             )}
           </motion.div>

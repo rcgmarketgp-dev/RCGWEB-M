@@ -62,11 +62,11 @@ export const MachineShowcaseCard: React.FC<MachineShowcaseCardProps> = ({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full max-w-2xl mx-auto bg-gradient-to-b from-[#F8FAFC] to-[#EEF2F6] dark:from-[#091A42] dark:to-[#060F26] text-slate-900 dark:text-white rounded-3xl border-2 border-blue-200 dark:border-blue-900/60 shadow-2xl overflow-hidden p-6 sm:p-8 space-y-6 select-none"
+      className="w-full max-w-2xl mx-auto bg-gradient-to-b from-[#F8FAFC] to-[#EEF2F6] dark:from-[#091A42] dark:to-[#060F26] text-slate-900 dark:text-white rounded-2xl sm:rounded-3xl border-2 border-blue-200 dark:border-blue-900/60 shadow-2xl overflow-hidden p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6 select-none"
     >
       
       {/* 1. Header Section matching poster top */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-blue-200 dark:border-blue-900/50 pb-5">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 border-b border-blue-200 dark:border-blue-900/50 pb-4 sm:pb-5">
         
         {/* RCG Logo Lockup */}
         <div className="shrink-0">
@@ -79,17 +79,17 @@ export const MachineShowcaseCard: React.FC<MachineShowcaseCardProps> = ({
         </div>
 
         {/* Machine Title & Badges */}
-        <div className="flex flex-col items-start sm:items-end space-y-1.5 rtl:sm:items-start ltr:sm:items-end">
+        <div className="flex flex-col items-start sm:items-end space-y-1 sm:space-y-1.5 rtl:sm:items-start ltr:sm:items-end">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xl sm:text-2xl font-black text-[#144AE0] dark:text-[#A6D6FE]">
+            <span className="text-lg sm:text-2xl font-black text-[#144AE0] dark:text-[#A6D6FE]">
               {isRtl ? product.categoryFa : product.categoryEn}
             </span>
-            <span className="px-3 py-1 rounded-xl bg-[#091A42] dark:bg-[#144AE0] text-white font-mono font-bold text-sm shadow-md">
+            <span className="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-xl bg-[#091A42] dark:bg-[#144AE0] text-white font-mono font-bold text-xs sm:text-sm shadow-md">
               {product.model}
             </span>
           </div>
 
-          <p className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100">
+          <p className="text-sm sm:text-lg font-black text-slate-800 dark:text-slate-100">
             {product.brand}
           </p>
 
@@ -102,7 +102,7 @@ export const MachineShowcaseCard: React.FC<MachineShowcaseCardProps> = ({
       </div>
 
       {/* 2. Hero Machine Centerpiece with Scalloped Quality Seal */}
-      <div className="relative rounded-2xl overflow-hidden bg-white dark:bg-slate-950/70 border border-blue-100 dark:border-blue-900/40 p-4 sm:p-6 shadow-inner">
+      <div className="relative rounded-2xl overflow-hidden bg-white dark:bg-slate-950/70 border border-blue-100 dark:border-blue-900/40 p-2.5 sm:p-4 md:p-6 shadow-inner">
         
         {/* Machine Main Photo */}
         <div className="relative aspect-[16/10] sm:aspect-[16/9] flex items-center justify-center overflow-hidden rounded-xl">
@@ -113,18 +113,18 @@ export const MachineShowcaseCard: React.FC<MachineShowcaseCardProps> = ({
             referrerPolicy="no-referrer"
           />
 
-          {/* Quality Seal Badge (Exact replica of circular badge in user photo) */}
-          <div className="absolute bottom-2 rtl:left-2 ltr:right-2 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-gradient-to-tr from-[#091A42] to-[#144AE0] text-white p-3 flex flex-col items-center justify-center text-center shadow-2xl border-2 border-white/60 dark:border-blue-300/40 transform hover:rotate-6 transition-transform">
-            <div className="flex items-center gap-0.5 text-amber-300 text-[10px] mb-0.5">
-              <Star className="w-2.5 h-2.5 fill-amber-300" />
-              <Star className="w-2.5 h-2.5 fill-amber-300" />
-              <Star className="w-2.5 h-2.5 fill-amber-300" />
+          {/* Quality Seal Badge (Responsive scale for mobile visibility) */}
+          <div className="absolute bottom-1.5 rtl:left-1.5 ltr:right-1.5 sm:bottom-2 sm:rtl:left-2 sm:ltr:right-2 w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-full bg-gradient-to-tr from-[#091A42] to-[#144AE0] text-white p-2 sm:p-3 flex flex-col items-center justify-center text-center shadow-2xl border-2 border-white/60 dark:border-blue-300/40 transform hover:rotate-6 transition-transform">
+            <div className="flex items-center gap-0.5 text-amber-300 text-[9px] sm:text-[10px] mb-0.5">
+              <Star className="w-2 h-2 sm:w-2.5 sm:h-2.5 fill-amber-300" />
+              <Star className="w-2 h-2 sm:w-2.5 sm:h-2.5 fill-amber-300" />
+              <Star className="w-2 h-2 sm:w-2.5 sm:h-2.5 fill-amber-300" />
             </div>
-            <p className="text-[10px] sm:text-[11px] font-black leading-tight">
+            <p className="text-[8.5px] sm:text-[10px] md:text-[11px] font-black leading-tight">
               {isRtl ? 'دستگاهی با کیفیت و قابل اعتماد' : 'Certified High Reliability'}
             </p>
-            <div className="mt-1 p-0.5 rounded-full bg-white/20 text-white">
-              <Check className="w-3.5 h-3.5" />
+            <div className="mt-0.5 sm:mt-1 p-0.5 rounded-full bg-white/20 text-white">
+              <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             </div>
           </div>
         </div>
@@ -276,7 +276,7 @@ export const MachineShowcaseCard: React.FC<MachineShowcaseCardProps> = ({
       </div>
 
       {/* 5. Bottom Capability Strip with 4 Pillars */}
-      <div className="pt-4 border-t border-blue-200 dark:border-blue-900/50 grid grid-cols-4 divide-x rtl:divide-x-reverse divide-blue-200 dark:divide-blue-900/60 text-center text-xs">
+      <div className="pt-4 border-t border-blue-200 dark:border-blue-900/50 grid grid-cols-2 sm:grid-cols-4 gap-y-3 sm:gap-0 sm:divide-x rtl:sm:divide-x-reverse divide-blue-200 dark:divide-blue-900/60 text-center text-xs">
         <div className="px-2 space-y-1">
           <Wrench className="w-4 h-4 mx-auto text-[#144AE0] dark:text-[#A6D6FE]" />
           <p className="font-bold text-[11px]">{isRtl ? 'نصب و راه‌اندازی' : 'Setup'}</p>

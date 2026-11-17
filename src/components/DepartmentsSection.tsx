@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Department, Language, SectionCustomization, SiteSettings } from '../types';
 import { translations } from '../utils/i18n';
 import { triggerCtaLink } from '../utils/ctaNavigation';
+import { useResponsiveLayoutRatios } from '../hooks/useResponsiveLayoutRatios';
 import { RcgLogo } from './RcgLogo';
 import { ArrowLeft, ArrowRight, CheckCircle, X, PhoneCall } from 'lucide-react';
 import { Toolbox, Wrench, Disc, Factory, Sparkle } from '@phosphor-icons/react';
@@ -27,6 +28,7 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
   const [activeDeptModal, setActiveDeptModal] = useState<Department | null>(null);
   const t = translations[language].departments;
   const isRtl = language === 'fa';
+  const { departments: deptLayout } = useResponsiveLayoutRatios(language);
 
   const getDeptIcon = (key: Department['key']) => {
     switch (key) {
@@ -42,35 +44,35 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
   };
 
   return (
-    <section id="departments" className="py-20 sm:py-24 bg-slate-50 dark:bg-[#050C1F] relative overflow-hidden">
+    <section id="departments" className={`${deptLayout.sectionPadding} bg-slate-50 dark:bg-[#050C1F] relative overflow-hidden`}>
       {/* Background Decorative Pattern */}
       <div className="absolute inset-0 opacity-35 dark:opacity-15 rcg-pattern-triangles dark:rcg-pattern-triangles-dark pointer-events-none" />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <div className={`max-w-7xl mx-auto ${deptLayout.containerPadding} relative z-10`}>
         {/* Section Header */}
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-60px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="text-center max-w-3xl mx-auto mb-14 space-y-3"
+          className={`text-center max-w-3xl mx-auto ${deptLayout.headerSpacing}`}
         >
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 dark:bg-[#FD5202]/15 border border-orange-200 dark:border-[#FD5202]/40 text-xs font-bold text-[#FD5202]">
+          <div className={`inline-flex items-center ${deptLayout.badgeClass} rounded-full bg-orange-50 dark:bg-[#FD5202]/15 border border-orange-200 dark:border-[#FD5202]/40 font-bold text-[#FD5202]`}>
             <Sparkle weight="fill" className="w-3.5 h-3.5" />
             <span>{isRtl ? sectionConfig?.badgeFa || 'دپارتمان‌های تخصصی آرسی' : sectionConfig?.badgeEn || 'Our Specialized Departments'}</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#091A42] dark:text-white tracking-tight">
+          <h2 className={`${deptLayout.titleClass} font-black text-[#091A42] dark:text-white`}>
             {isRtl ? sectionConfig?.titleFa || t.tagline : sectionConfig?.titleEn || t.tagline}
           </h2>
 
-          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto">
+          <p className={`${deptLayout.subtitleClass} text-slate-600 dark:text-slate-300 max-w-2xl mx-auto`}>
             {isRtl ? sectionConfig?.subtitleFa || t.subtitle : sectionConfig?.subtitleEn || t.subtitle}
           </p>
         </motion.div>
 
         {/* 4 Pillars Structured Master Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-10">
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${deptLayout.masterGridGap}`}>
           {departments.map((dept, idx) => {
             const title = isRtl ? dept.titleFa : dept.titleEn;
             const shortDesc = isRtl ? dept.shortDescFa : dept.shortDescEn;
@@ -84,11 +86,11 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-50px' }}
                 transition={{ duration: 0.55, delay: idx * 0.08, ease: [0.16, 1, 0.3, 1] }}
-                className="bg-white dark:bg-[#091A42] text-slate-900 dark:text-white rounded-3xl border border-slate-200 dark:border-blue-900/60 shadow-lg hover:shadow-xl transition-shadow overflow-hidden flex flex-col justify-between p-6 sm:p-7 space-y-6"
+                className={`bg-white dark:bg-[#091A42] text-slate-900 dark:text-white rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-blue-900/60 shadow-lg hover:shadow-xl transition-shadow overflow-hidden flex flex-col justify-between ${deptLayout.cardPadding}`}
               >
                 {/* Card Top: Mini Logo + Dept Icon + Index */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-blue-900/50 pb-3">
+                <div className="space-y-3 sm:space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-blue-900/50 pb-2.5 sm:pb-3 gap-2">
                     <RcgLogo
                       settings={settings}
                       isDark={isDark}
@@ -96,29 +98,29 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
                       heightScale={0.78}
                       showSubtitle={false}
                     />
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                       <span className="p-1.5 rounded-lg bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800">
                         {getDeptIcon(dept.key)}
                       </span>
-                      <span className="font-mono text-xs font-bold text-[#144AE0] dark:text-[#A6D6FE] bg-blue-50 dark:bg-blue-950 px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-800 tabular-nums">
+                      <span className="font-mono text-xs font-bold text-[#144AE0] dark:text-[#A6D6FE] bg-blue-50 dark:bg-blue-950 px-2 sm:px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-800 tabular-nums">
                         0{idx + 1}
                       </span>
                     </div>
                   </div>
 
                   {/* Department Main Photo Banner */}
-                  <div className="relative rounded-2xl overflow-hidden aspect-[16/8] sm:aspect-[16/7] bg-slate-900 shadow-md">
+                  <div className="relative rounded-xl sm:rounded-2xl overflow-hidden aspect-[16/9] sm:aspect-[16/7] bg-slate-900 shadow-md">
                     <img
                       src={dept.image}
                       alt={title}
                       className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
                       referrerPolicy="no-referrer"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-4">
-                      <h3 className="text-xl sm:text-2xl font-black text-white">
+                    <div className={`absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end ${deptLayout.bannerOverlayPadding}`}>
+                      <h3 className={`${deptLayout.bannerTitleClass} font-black text-white`}>
                         {title}
                       </h3>
-                      <p className="text-xs sm:text-sm text-slate-200 line-clamp-1 mt-0.5">
+                      <p className={`${deptLayout.bannerDescClass} text-slate-200 line-clamp-1`}>
                         {shortDesc}
                       </p>
                     </div>
@@ -126,19 +128,19 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
                 </div>
 
                 {/* 2. Middle Section: Sub-section title + 3 Distinct Mini Cards with Matching Photos */}
-                <div className="space-y-3">
-                  <h4 className="text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider text-center">
+                <div className={deptLayout.subSectionGap}>
+                  <h4 className={`${deptLayout.subTitleClass} font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider text-center`}>
                     {subTitle}
                   </h4>
 
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className={`grid grid-cols-3 ${deptLayout.subGridGap}`}>
                     {dept.subCards.map((sc, sIdx) => (
                       <div
                         key={sIdx}
                         onClick={() => setActiveDeptModal(dept)}
-                        className="group/mini rounded-xl overflow-hidden bg-slate-100 dark:bg-[#060F26] border border-blue-200 dark:border-blue-900/60 p-2 text-center cursor-pointer hover:border-[#144AE0] transition-all shadow-sm hover:shadow-md flex flex-col justify-between"
+                        className={`group/mini rounded-xl overflow-hidden bg-slate-100 dark:bg-[#060F26] border border-blue-200 dark:border-blue-900/60 ${deptLayout.subCardPadding} text-center cursor-pointer hover:border-[#144AE0] transition-all shadow-sm hover:shadow-md flex flex-col justify-between`}
                       >
-                        <div className="relative aspect-[4/3] rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-900 mb-2">
+                        <div className="relative aspect-[4/3] rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-900 mb-1.5 sm:mb-2">
                           <img
                             src={sc.image}
                             alt={isRtl ? sc.titleFa : sc.titleEn}
@@ -147,7 +149,7 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
                           />
                         </div>
 
-                        <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 group-hover/mini:text-[#144AE0] dark:group-hover/mini:text-[#A6D6FE] line-clamp-2 leading-tight">
+                        <span className={`${deptLayout.subCardTitleClass} font-bold text-slate-800 dark:text-slate-200 group-hover/mini:text-[#144AE0] dark:group-hover/mini:text-[#A6D6FE] line-clamp-2`}>
                           {isRtl ? sc.titleFa : sc.titleEn}
                         </span>
 
@@ -168,9 +170,9 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
                   onClick={() =>
                     triggerCtaLink(dept.bottomBannerLink, () => setActiveDeptModal(dept))
                   }
-                  className="rounded-2xl bg-gradient-to-r from-[#091A42] to-[#144AE0] dark:from-[#060F26] dark:to-blue-900 text-white p-3.5 sm:p-4 flex items-center justify-between gap-3 shadow-md hover:shadow-lg transition-all cursor-pointer group/banner"
+                  className={`rounded-2xl bg-gradient-to-r from-[#091A42] to-[#144AE0] dark:from-[#060F26] dark:to-blue-900 text-white ${deptLayout.bottomBannerPadding} flex items-center justify-between shadow-md hover:shadow-lg transition-all cursor-pointer group/banner`}
                 >
-                  <p className="text-xs sm:text-sm font-bold text-slate-100 group-hover/banner:text-[#A6D6FE] transition-colors line-clamp-1">
+                  <p className={`${deptLayout.bottomBannerTextClass} font-bold text-slate-100 group-hover/banner:text-[#A6D6FE] transition-colors line-clamp-1`}>
                     {bannerText}
                   </p>
 
@@ -189,16 +191,16 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
       {/* In-Depth Department Modal with Motion Transition */}
       <AnimatePresence>
         {activeDeptModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              className="relative w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col text-slate-900 dark:text-white"
+              className="relative w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-2xl shadow-2xl overflow-hidden max-h-[92dvh] flex flex-col text-slate-900 dark:text-white"
             >
               {/* Modal Header */}
-              <div className="relative h-48 sm:h-56 overflow-hidden shrink-0">
+              <div className="relative h-40 sm:h-56 overflow-hidden shrink-0">
                 <img
                   src={activeDeptModal.image}
                   alt={isRtl ? activeDeptModal.titleFa : activeDeptModal.titleEn}
@@ -209,48 +211,48 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
 
                 <button
                   onClick={() => setActiveDeptModal(null)}
-                  className="absolute top-4 rtl:left-4 ltr:right-4 p-2 rounded-full bg-slate-900/80 hover:bg-[#FD5202] text-white transition-colors border border-slate-700 cursor-pointer"
+                  className="absolute top-3 rtl:left-3 ltr:right-3 sm:top-4 sm:rtl:left-4 sm:ltr:right-4 p-2 min-h-[38px] min-w-[38px] flex items-center justify-center rounded-full bg-slate-900/80 hover:bg-[#FD5202] text-white transition-colors border border-slate-700 cursor-pointer"
                   aria-label={t.modalClose}
                 >
                   <X className="w-5 h-5" />
                 </button>
 
-                <div className="absolute bottom-4 px-6 space-y-1">
-                  <span className="text-xs font-bold text-[#FD5202] uppercase tracking-wider">
+                <div className="absolute bottom-3 px-4 sm:bottom-4 sm:px-6 space-y-1">
+                  <span className="text-[11px] sm:text-xs font-bold text-[#FD5202] uppercase tracking-wider block">
                     {isRtl ? activeDeptModal.taglineFa : activeDeptModal.taglineEn}
                   </span>
-                  <h3 className="text-2xl sm:text-3xl font-extrabold text-white">
+                  <h3 className="text-xl sm:text-3xl font-extrabold text-white">
                     {isRtl ? activeDeptModal.titleFa : activeDeptModal.titleEn}
                   </h3>
                 </div>
               </div>
 
               {/* Modal Scrollable Body */}
-              <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-700 dark:text-slate-200">
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 text-xs sm:text-sm text-slate-700 dark:text-slate-200">
                 {/* Detailed Description */}
-                <p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed">
                   {isRtl ? activeDeptModal.fullDescFa : activeDeptModal.fullDescEn}
                 </p>
 
                 {/* Stats Highlights */}
-                <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/60">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/60">
                   {(isRtl ? activeDeptModal.statsFa : activeDeptModal.statsEn).map((stat, i) => (
                     <div key={i} className="text-center">
-                      <p className="text-lg sm:text-xl font-extrabold text-[#144AE0] dark:text-[#A6D6FE] tabular-nums">
+                      <p className="text-base sm:text-xl font-extrabold text-[#144AE0] dark:text-[#A6D6FE] tabular-nums">
                         {stat.value}
                       </p>
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{stat.label}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 mt-0.5 leading-tight">{stat.label}</p>
                     </div>
                   ))}
                 </div>
 
                 {/* Key Services List */}
-                <div className="space-y-3">
-                  <h4 className="font-bold text-[#091A42] dark:text-white text-base flex items-center gap-2">
+                <div className="space-y-2.5 sm:space-y-3">
+                  <h4 className="font-bold text-[#091A42] dark:text-white text-sm sm:text-base flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-[#FD5202]" />
                     <span>{t.servicesTitle}</span>
                   </h4>
-                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
                     {(isRtl ? activeDeptModal.servicesFa : activeDeptModal.servicesEn).map((service, i) => (
                       <li key={i} className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#FD5202] mt-2 shrink-0" />
@@ -262,10 +264,10 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
               </div>
 
               {/* Modal Footer */}
-              <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-blue-900/50 flex flex-wrap items-center justify-between gap-4">
+              <div className="p-3.5 sm:p-6 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-blue-900/50 flex flex-wrap items-center justify-between gap-3 shrink-0">
                 <button
                   onClick={() => setActiveDeptModal(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                  className="px-4 py-2 min-h-[40px] text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                 >
                   {t.modalClose}
                 </button>
@@ -276,7 +278,7 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
                     setActiveDeptModal(null);
                     onSelectDepartmentForInquiry(deptTitle);
                   }}
-                  className="flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-bold text-white bg-[#FD5202] hover:bg-[#E04600] rounded-xl shadow-md transition-all whitespace-nowrap cursor-pointer"
+                  className="rcg-btn-primary flex items-center gap-2 px-4 sm:px-5 py-2.5 min-h-[42px] text-xs sm:text-sm font-bold text-white bg-[#FD5202] hover:bg-[#E04600] rounded-xl shadow-md whitespace-nowrap cursor-pointer"
                 >
                   <PhoneCall className="w-4 h-4" />
                   <span>{t.requestService}</span>

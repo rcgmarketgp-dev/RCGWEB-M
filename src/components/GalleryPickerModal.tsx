@@ -46,19 +46,19 @@ export const GalleryPickerModal: React.FC<GalleryPickerModalProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-      <div className="w-full max-w-4xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl shadow-2xl overflow-hidden max-h-[88vh] flex flex-col text-slate-900 dark:text-white">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-2.5 sm:p-4 bg-black/75 backdrop-blur-sm">
+      <div className="w-full max-w-4xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl shadow-2xl overflow-hidden max-h-[92dvh] flex flex-col text-slate-900 dark:text-white">
         {/* Header */}
-        <div className="px-6 py-4 bg-slate-50 dark:bg-[#060F26] border-b border-slate-200 dark:border-blue-900/60 flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <span className="p-2 rounded-xl bg-[#144AE0] text-white">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 dark:bg-[#060F26] border-b border-slate-200 dark:border-blue-900/60 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="p-2 rounded-xl bg-[#144AE0] text-white shrink-0">
               <ImageIcon className="w-4 h-4" />
             </span>
-            <div>
-              <h3 className="text-sm sm:text-base font-black text-[#091A42] dark:text-white">
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-black text-[#091A42] dark:text-white truncate">
                 {isRtl ? 'انتخاب تصویر از گالری بایگانی‌شده RCG' : 'Pick Image from RCG Media Archive'}
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-[#A6D6FE]">
+              <p className="text-[11px] text-slate-500 dark:text-[#A6D6FE] truncate">
                 {isRtl
                   ? 'تمامی تصاویر آپلودشده به صورت دسته‌بندی‌شده در اینجا بایگانی می‌شوند'
                   : 'All uploaded photos are automatically archived here by category'}
@@ -69,14 +69,14 @@ export const GalleryPickerModal: React.FC<GalleryPickerModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-blue-800 text-slate-500 hover:text-[#FD5202] cursor-pointer"
+            className="p-2 min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-blue-800 text-slate-500 hover:text-[#FD5202] cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Filters */}
-        <div className="px-6 py-3.5 border-b border-slate-200 dark:border-blue-900/50 space-y-3 bg-white dark:bg-[#091A42] shrink-0">
+        <div className="px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-blue-900/50 space-y-2.5 sm:space-y-3 bg-white dark:bg-[#091A42] shrink-0">
           <div className="relative">
             <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 rtl:right-3 ltr:left-3 text-slate-400" />
             <input
@@ -122,7 +122,7 @@ export const GalleryPickerModal: React.FC<GalleryPickerModalProps> = ({
         </div>
 
         {/* Grid */}
-        <div className="p-6 overflow-y-auto flex-1 bg-slate-50 dark:bg-[#050C1F]">
+        <div className="p-3.5 sm:p-6 overflow-y-auto flex-1 bg-slate-50 dark:bg-[#050C1F]">
           {filtered.length === 0 ? (
             <div className="py-12 text-center text-xs text-slate-500 dark:text-slate-400">
               {isRtl
@@ -130,7 +130,7 @@ export const GalleryPickerModal: React.FC<GalleryPickerModalProps> = ({
                 : 'No images found in this category.'}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 sm:gap-4">
               {filtered.map((asset) => (
                 <button
                   key={asset.id}

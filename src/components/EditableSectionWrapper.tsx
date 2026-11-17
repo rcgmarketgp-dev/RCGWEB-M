@@ -38,11 +38,13 @@ export const EditableSectionWrapper: React.FC<EditableSectionWrapperProps> = ({
         transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as const },
       };
 
+  const snapClass = sectionId === 'footer' ? 'snap-end scroll-mt-20' : 'snap-start scroll-mt-20';
+
   if (!isEditMode) {
     return (
       <motion.div
         {...motionProps}
-        className="w-full"
+        className={`w-full ${snapClass}`}
       >
         {children}
       </motion.div>
@@ -57,7 +59,7 @@ export const EditableSectionWrapper: React.FC<EditableSectionWrapperProps> = ({
         e.stopPropagation();
         onEditSection(sectionId);
       }}
-      className="relative group/editable cursor-pointer w-full"
+      className={`relative group/editable cursor-pointer w-full ${snapClass}`}
       title={isRtl ? `کلیک برای ویرایش بخش ${labelFa}` : `Click to edit ${labelEn}`}
     >
       {children}
@@ -67,14 +69,14 @@ export const EditableSectionWrapper: React.FC<EditableSectionWrapperProps> = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.25 }}
-        className="absolute inset-0 z-30 border-2 border-dashed border-[#144AE0]/45 group-hover/editable:border-[#FD5202] group-hover/editable:bg-[#144AE0]/[0.05] transition-all duration-200 pointer-events-auto flex items-start justify-end p-3 sm:p-5"
+        className="absolute inset-0 z-30 border-2 border-dashed border-[#144AE0]/45 group-hover/editable:border-[#FD5202] group-hover/editable:bg-[#144AE0]/[0.05] transition-all duration-200 pointer-events-auto flex items-start justify-end p-2 sm:p-5"
       >
         <motion.div
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#091A42]/95 group-hover/editable:bg-[#FD5202] text-white text-xs font-bold shadow-lg border border-blue-400/40 group-hover/editable:border-orange-300 transition-colors backdrop-blur-md"
+          className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-[#091A42]/95 group-hover/editable:bg-[#FD5202] text-white text-[11px] sm:text-xs font-bold shadow-lg border border-blue-400/40 group-hover/editable:border-orange-300 transition-colors backdrop-blur-md"
         >
-          <SlidersHorizontal className="w-3.5 h-3.5" />
+          <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
           <span>
             {isRtl ? `تنظیمات بخش: ${labelFa}` : `Edit: ${labelEn}`}
           </span>

@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
-import { SharpeningOrder, Language, SectionCustomization } from '../types';
+import React, { useState, useEffect } from 'react';
+import { SharpeningOrder, Language, SectionCustomization, SiteSettings } from '../types';
 import { translations } from '../utils/i18n';
 import { useForm } from 'react-hook-form';
-import { Calculator, CheckCircle2, Send, Clock, AlertCircle } from 'lucide-react';
+import { useFirebase } from '../context/FirebaseContext';
+import { GoogleBrandIcon } from './GoogleBrandIcon';
+import { ExternalIconBadge } from './ExternalIconBadge';
+import { Calculator, CheckCircle2, Send, Clock, AlertCircle, UserCheck } from 'lucide-react';
 import { Disc, Cpu } from '@phosphor-icons/react';
 import { motion } from 'motion/react';
 
 interface SharpeningCalculatorProps {
   language: Language;
+  settings?: SiteSettings;
   sectionConfig?: SectionCustomization;
   onOrderCreated: (order: SharpeningOrder) => void;
 }
@@ -21,11 +25,13 @@ interface SharpeningCustomerInputs {
 
 export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
   language,
+  settings,
   sectionConfig,
   onOrderCreated,
 }) => {
   const t = translations[language].calculator;
   const isRtl = language === 'fa';
+  const { user, signInWithGoogle } = useFirebase();
 
   const [bladeType, setBladeType] = useState('mdf');
   const [diameter, setDiameter] = useState('300');
@@ -33,20 +39,29 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
   const [serviceType, setServiceType] = useState('std');
   const [quantity, setQuantity] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submitNotice, setSubmitNotice] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const {
     register,
     handleSubmit,
+    setValue,
     reset,
     formState: { errors },
   } = useForm<SharpeningCustomerInputs>({
     defaultValues: {
-      customerName: '',
+      customerName: user?.displayName || '',
       phone: '',
       city: '',
       notes: '',
     },
   });
+
+  useEffect(() => {
+    if (user?.displayName) {
+      setValue('customerName', user.displayName);
+    }
+  }, [user?.displayName, setValue]);
 
   const calculatePrice = () => {
     let basePricePerTooth = 3500;
@@ -66,7 +81,23 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
 
   const calculated = calculatePrice();
 
-  const onSubmit = (data: SharpeningCustomerInputs) => {
+  const onSubmit = async (data: SharpeningCustomerInputs) => {
+    setSubmitNotice(null);
+    let activeUser = user;
+    if (!activeUser) {
+      setSubmitting(true);
+      activeUser = await signInWithGoogle();
+      setSubmitting(false);
+      if (!activeUser) {
+        setSubmitNotice(
+          isRtl
+            ? 'برای ثبت آنلاین سفارش در سامانه ابری RCG و پیگیری آن، ورود با گوگل الزامی است.'
+            : 'Please sign in with Google to submit and track your sharpening order.'
+        );
+        return;
+      }
+    }
+
     const newOrder: SharpeningOrder = {
       id: `SH-${Math.floor(1000 + Math.random() * 9000)}`,
       customerName: data.customerName.trim(),
@@ -106,7 +137,7 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
   };
 
   return (
-    <section id="calculator" className="py-20 sm:py-24 bg-white dark:bg-[#091A42] text-slate-900 dark:text-white relative overflow-hidden">
+    <section id="calculator" className="py-14 sm:py-20 lg:py-24 bg-white dark:bg-[#091A42] text-slate-900 dark:text-white relative overflow-hidden">
       <div className="absolute inset-0 opacity-30 dark:opacity-15 rcg-pattern-triangles dark:rcg-pattern-triangles-dark pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -116,30 +147,30 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-60px' }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="text-center max-w-3xl mx-auto mb-14 space-y-3"
+          className="text-center max-w-3xl mx-auto mb-8 sm:mb-14 space-y-3"
         >
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 dark:bg-[#FD5202]/15 border border-orange-200 dark:border-[#FD5202]/40 text-xs font-bold text-[#FD5202]">
+          <div className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-full bg-orange-50 dark:bg-[#FD5202]/15 border border-orange-200 dark:border-[#FD5202]/40 text-[11px] sm:text-xs font-bold text-[#FD5202]">
             <Cpu weight="duotone" className="w-4 h-4" />
             <span>{isRtl ? sectionConfig?.badgeFa || 'مرکز مکانیزه تیزکاری آلمانی RCG' : sectionConfig?.badgeEn || 'RCG Automated Sharpening Center'}</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#091A42] dark:text-white">
+          <h2 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#091A42] dark:text-white">
             {isRtl ? sectionConfig?.titleFa || t.title : sectionConfig?.titleEn || t.title}
           </h2>
 
-          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto">
+          <p className="text-sm sm:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl mx-auto">
             {isRtl ? sectionConfig?.subtitleFa || t.subtitle : sectionConfig?.subtitleEn || t.subtitle}
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
           {/* Left Form Card */}
           <motion.div
             initial={{ opacity: 0, y: 28 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-40px' }}
             transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-            className="lg:col-span-7 bg-slate-50 dark:bg-[#060F26]/95 border border-slate-200 dark:border-blue-500/30 rounded-3xl p-6 sm:p-8 shadow-lg space-y-6"
+            className="lg:col-span-7 bg-slate-50 dark:bg-[#060F26]/95 border border-slate-200 dark:border-blue-500/30 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-lg space-y-5 sm:space-y-6"
           >
             {isSubmitted ? (
               <div className="py-12 text-center space-y-4">
@@ -190,7 +221,7 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                             setTeeth('96');
                           }
                         }}
-                        className="w-full bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none cursor-pointer"
+                        className="w-full min-h-[42px] bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none cursor-pointer"
                       >
                         <option value="mdf">{t.bladeTypeMdf}</option>
                         <option value="scoring">{t.bladeTypeScoring}</option>
@@ -207,7 +238,7 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                       <select
                         value={diameter}
                         onChange={(e) => setDiameter(e.target.value)}
-                        className="w-full bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none cursor-pointer"
+                        className="w-full min-h-[42px] bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none cursor-pointer"
                       >
                         <option value="120">120 mm ({isRtl ? 'خط‌زن' : 'Scoring'})</option>
                         <option value="250">250 mm</option>
@@ -226,7 +257,7 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                       <select
                         value={teeth}
                         onChange={(e) => setTeeth(e.target.value)}
-                        className="w-full bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none cursor-pointer"
+                        className="w-full min-h-[42px] bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none cursor-pointer"
                       >
                         <option value="24">24T ({isRtl ? 'خط‌زن' : 'Scoring'})</option>
                         <option value="48">48T ({isRtl ? 'طولی‌بر' : 'Rip Cut'})</option>
@@ -246,7 +277,7 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                         <button
                           type="button"
                           onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                          className="w-10 h-10 rounded-xl bg-white dark:bg-blue-950 border border-slate-200 dark:border-blue-800 text-lg font-bold hover:bg-slate-100 dark:hover:bg-blue-900 text-slate-800 dark:text-white cursor-pointer"
+                          className="w-11 h-11 shrink-0 rounded-xl bg-white dark:bg-blue-950 border border-slate-200 dark:border-blue-800 text-lg font-bold hover:bg-slate-100 dark:hover:bg-blue-900 text-slate-800 dark:text-white cursor-pointer"
                         >
                           -
                         </button>
@@ -256,12 +287,12 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                           max="50"
                           value={quantity}
                           onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                          className="flex-1 text-center bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 rounded-xl py-2 text-slate-900 dark:text-white font-bold text-sm tabular-nums"
+                          className="flex-1 min-w-0 min-h-[44px] text-center bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900 rounded-xl py-2 text-slate-900 dark:text-white font-bold text-sm tabular-nums"
                         />
                         <button
                           type="button"
                           onClick={() => setQuantity(quantity + 1)}
-                          className="w-10 h-10 rounded-xl bg-white dark:bg-blue-950 border border-slate-200 dark:border-blue-800 text-lg font-bold hover:bg-slate-100 dark:hover:bg-blue-900 text-slate-800 dark:text-white cursor-pointer"
+                          className="w-11 h-11 shrink-0 rounded-xl bg-white dark:bg-blue-950 border border-slate-200 dark:border-blue-800 text-lg font-bold hover:bg-slate-100 dark:hover:bg-blue-900 text-slate-800 dark:text-white cursor-pointer"
                         >
                           +
                         </button>
@@ -389,14 +420,49 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
                   </div>
                 </div>
 
-                {/* Submit Trigger */}
+                {/* Auth status hint & Submit Trigger */}
+                {submitNotice && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitNotice}</span>
+                  </p>
+                )}
+
                 <button
                   type="submit"
-                  className="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#FD5202] to-[#E04600] hover:from-[#E04600] hover:to-[#C03C00] shadow-lg shadow-orange-500/25 dark:shadow-orange-950/40 transition-all cursor-pointer"
+                  disabled={submitting}
+                  className="rcg-btn-primary w-full min-h-[48px] flex items-center justify-center gap-2 py-3.5 px-4 sm:px-6 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-[#FD5202] to-[#E04600] hover:from-[#E04600] hover:to-[#C03C00] shadow-lg shadow-orange-500/25 dark:shadow-orange-950/40 cursor-pointer disabled:opacity-60 text-center"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>{isRtl ? sectionConfig?.ctaTextFa || t.submitBtn : sectionConfig?.ctaTextEn || t.submitBtn}</span>
+                  {user ? (
+                    <ExternalIconBadge
+                      iconName={settings?.externalCtaIcon}
+                      className="w-4 h-4 shrink-0"
+                      invertColor={true}
+                      fallback={<Send className="w-4 h-4 shrink-0" />}
+                    />
+                  ) : (
+                    <GoogleBrandIcon className="w-4 h-4 bg-white rounded-full p-0.5 shrink-0" />
+                  )}
+                  <span>
+                    {user
+                      ? isRtl
+                        ? sectionConfig?.ctaTextFa || t.submitBtn
+                        : sectionConfig?.ctaTextEn || t.submitBtn
+                      : isRtl
+                      ? 'ورود با گوگل و ثبت نهایی سفارش تیزکاری'
+                      : 'Sign in with Google & Submit Order'}
+                  </span>
                 </button>
+                {user && (
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center justify-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>
+                      {isRtl
+                        ? `سفارش در پروفایل ${user.email} ذخیره و قابل پیگیری خواهد بود`
+                        : `Order saved to verified account (${user.email})`}
+                    </span>
+                  </p>
+                )}
               </form>
             )}
 
@@ -411,23 +477,23 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
             className="lg:col-span-5 space-y-6"
           >
             {/* Price Card */}
-            <div className="bg-gradient-to-br from-[#091A42] to-[#144AE0] dark:from-[#0B1E4D] dark:to-[#060F26] border border-blue-800/60 dark:border-blue-500/40 rounded-3xl p-6 sm:p-7 shadow-xl text-white relative overflow-hidden">
+            <div className="bg-gradient-to-br from-[#091A42] to-[#144AE0] dark:from-[#0B1E4D] dark:to-[#060F26] border border-blue-800/60 dark:border-blue-500/40 rounded-2xl sm:rounded-3xl p-4 sm:p-7 shadow-xl text-white relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-[#FD5202]/15 rounded-full blur-2xl pointer-events-none" />
 
-              <div className="flex items-center justify-between pb-4 border-b border-white/15">
-                <div className="flex items-center gap-2 text-sm font-bold text-[#A6D6FE]">
-                  <Calculator className="w-4 h-4 text-[#FD5202]" />
+              <div className="flex items-center justify-between gap-2 pb-3.5 sm:pb-4 border-b border-white/15">
+                <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-[#A6D6FE]">
+                  <Calculator className="w-4 h-4 text-[#FD5202] shrink-0" />
                   <span>{isRtl ? 'برآورد فاکتور تیزکاری' : 'Sharpening Estimate'}</span>
                 </div>
-                <span className="text-[11px] font-mono text-emerald-300 bg-emerald-950/60 border border-emerald-700/70 px-2.5 py-0.5 rounded-lg tabular-nums">
+                <span className="text-[11px] font-mono text-emerald-300 bg-emerald-950/60 border border-emerald-700/70 px-2.5 py-0.5 rounded-lg tabular-nums shrink-0">
                   {quantity} {isRtl ? 'عدد تیغ اره' : 'blades'}
                 </span>
               </div>
 
               {/* Price Display */}
-              <div className="py-6 text-center space-y-1">
+              <div className="py-5 sm:py-6 text-center space-y-1">
                 <span className="text-xs text-slate-300">{t.estPrice}</span>
-                <p className="text-3xl sm:text-4xl font-black text-white tabular-nums">
+                <p className="text-2xl sm:text-4xl font-black text-white tabular-nums break-words">
                   {isRtl ? calculated.toman : calculated.tomanEn}
                 </p>
                 <p className="text-[11px] text-blue-100/80 pt-1">
@@ -436,16 +502,16 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
               </div>
 
               {/* Turnaround Time */}
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-black/25 border border-white/15 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 sm:p-3.5 rounded-xl bg-black/25 border border-white/15 text-xs">
                 <div className="flex items-center gap-2 text-slate-200">
-                  <Clock className="w-4 h-4 text-[#FD5202]" />
+                  <Clock className="w-4 h-4 text-[#FD5202] shrink-0" />
                   <span>{t.estTime}</span>
                 </div>
                 <span className="font-bold text-white">{t.turnaround}</span>
               </div>
 
               {/* RCG Advantages */}
-              <div className="mt-5 space-y-2.5 text-xs text-blue-50 border-t border-white/15 pt-4">
+              <div className="mt-4 sm:mt-5 space-y-2.5 text-xs text-blue-50 border-t border-white/15 pt-4">
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-[#FD5202] shrink-0 mt-0.5" />
                   <span>{isRtl ? 'ماشین‌آلات آلمانی Vollmer با سیستم خنک‌کاری صابون مایع بدون سوختگی الماسه' : 'Vollmer German robotic grinding with high-pressure fluid cooling'}</span>
@@ -462,18 +528,18 @@ export const SharpeningCalculator: React.FC<SharpeningCalculatorProps> = ({
             </div>
 
             {/* Saw Blade Technical Asset Preview Card */}
-            <div className="rounded-3xl overflow-hidden border border-slate-200 dark:border-blue-900/50 relative aspect-[16/9] shadow-lg group">
+            <div className="rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200 dark:border-blue-900/50 relative aspect-[16/9] shadow-lg group">
               <img
                 src={sectionConfig?.image || '/assets/aistudio/04_saw_blade_hero_crop_dffed999.jpg'}
                 alt="Saw blade cutting with sparks"
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 referrerPolicy="no-referrer"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent p-5 flex flex-col justify-end">
-                <p className="font-bold text-white text-sm">
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent p-3.5 sm:p-5 flex flex-col justify-end">
+                <p className="font-bold text-white text-xs sm:text-sm">
                   {isRtl ? 'تکنولوژی آلمان در قلب شمال کشور' : 'German Tooling Technology in Northern Iran'}
                 </p>
-                <p className="text-xs text-slate-300">
+                <p className="text-[11px] sm:text-xs text-slate-300">
                   {isRtl ? 'تیزکاری بیش از ۲۰,۰۰۰ تیغ اره صنعتی از سال ۱۳۸۹' : 'Over 20,000 industrial blades processed since 2010'}
                 </p>
               </div>

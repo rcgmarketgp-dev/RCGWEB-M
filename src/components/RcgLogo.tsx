@@ -123,14 +123,14 @@ export const RcgLogo: React.FC<RcgLogoProps> = ({
   const showCustomImage = resolvedLogoType === 'custom' && !!resolvedCustomUrl;
 
   return (
-    <div className={`flex flex-col items-start select-none ${className}`}>
-      <div className="flex items-center">
+    <div className={`flex flex-col items-start select-none min-w-0 max-w-full overflow-hidden ${className}`}>
+      <div className="flex items-center max-w-full">
         {showCustomImage ? (
           <img
             src={resolvedCustomUrl}
             alt={resolvedCompanyNameFa}
             style={{ height: `${computedHeight}px` }}
-            className="w-auto max-w-[200px] object-contain transition-transform duration-200"
+            className="w-auto max-w-[135px] sm:max-w-[200px] object-contain transition-transform duration-200"
             referrerPolicy="no-referrer"
           />
         ) : (
@@ -139,7 +139,7 @@ export const RcgLogo: React.FC<RcgLogoProps> = ({
             viewBox="0 0 280 72"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
-            className="transition-transform duration-200"
+            className="w-auto max-w-[135px] sm:max-w-none transition-transform duration-200"
             aria-label="RCG Woodworking Solutions Logo"
           >
             {/* Letter R */}
@@ -180,9 +180,9 @@ export const RcgLogo: React.FC<RcgLogoProps> = ({
       </div>
 
       {resolvedShowSubtitle && (
-        <div className="flex flex-col items-start mt-1">
+        <div className="flex flex-col items-start mt-1 max-w-full">
           <span
-            className={`text-[9.5px] font-extrabold tracking-[0.22em] uppercase ${
+            className={`text-[8.5px] sm:text-[9.5px] font-extrabold tracking-[0.16em] sm:tracking-[0.22em] uppercase truncate max-w-[165px] sm:max-w-none ${
               isDarkSurface ? 'text-slate-300' : 'text-slate-600'
             }`}
           >
@@ -190,9 +190,9 @@ export const RcgLogo: React.FC<RcgLogoProps> = ({
           </span>
 
           {(subtitleType === 'full' || subtitleType === 'fa') && (
-            <div className="flex flex-col items-start mt-0.5">
+            <div className="flex flex-col items-start mt-0.5 max-w-full">
               <span
-                className={`text-xs font-black ${
+                className={`text-[11px] sm:text-xs font-black truncate max-w-[165px] sm:max-w-none ${
                   isDarkSurface ? 'text-[#A6D6FE]' : 'text-[#091A42]'
                 }`}
               >
@@ -200,7 +200,7 @@ export const RcgLogo: React.FC<RcgLogoProps> = ({
               </span>
               {subtitleType === 'full' && (
                 <span
-                  className={`text-[9px] leading-tight ${
+                  className={`text-[9px] leading-tight truncate max-w-[180px] sm:max-w-none ${
                     isDarkSurface ? 'text-slate-400' : 'text-slate-500'
                   }`}
                 >

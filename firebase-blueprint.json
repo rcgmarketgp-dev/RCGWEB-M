@@ -1,0 +1,439 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public-safe user profile and preferences stored under user_profiles/{userId}.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "preferredLanguage": {
+          "type": "string",
+          "enum": ["fa", "en"]
+        },
+        "themePreference": {
+          "type": "string",
+          "enum": ["light", "dark"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "preferredLanguage", "themePreference", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Strictly isolated PII (email, phone) stored in user_profiles/{userId}/private/{docId}.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted administrator roster keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "super_admin"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "SiteConfigDoc": {
+      "title": "SiteConfigDoc",
+      "description": "Global CMS site settings, section customizations, and navigation link configuration.",
+      "type": "object",
+      "properties": {
+        "configKey": {
+          "type": "string",
+          "enum": ["settings", "sections", "navigation"]
+        },
+        "data": {
+          "type": "object"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["configKey", "data", "updatedBy", "updatedAt"]
+    },
+    "HeroSlide": {
+      "title": "HeroSlide",
+      "description": "Hero carousel slide item.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "order": { "type": "number" },
+        "titleFa": { "type": "string", "maxLength": 300 },
+        "titleEn": { "type": "string", "maxLength": 300 },
+        "highlightFa": { "type": "string", "maxLength": 200 },
+        "highlightEn": { "type": "string", "maxLength": 200 },
+        "subtitleFa": { "type": "string", "maxLength": 800 },
+        "subtitleEn": { "type": "string", "maxLength": 800 },
+        "image": { "type": "string", "maxLength": 700000 },
+        "primaryCtaFa": { "type": "string", "maxLength": 120 },
+        "primaryCtaEn": { "type": "string", "maxLength": 120 },
+        "primaryCtaLink": { "type": "string", "maxLength": 300 },
+        "secondaryCtaFa": { "type": "string", "maxLength": 120 },
+        "secondaryCtaEn": { "type": "string", "maxLength": 120 },
+        "secondaryCtaLink": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "titleFa", "titleEn", "image", "updatedAt"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "One of the 4 core corporate service pillars and its sub-cards.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "key": {
+          "type": "string",
+          "enum": ["sales", "service", "sharpening", "overhaul"]
+        },
+        "order": { "type": "number" },
+        "titleFa": { "type": "string", "maxLength": 250 },
+        "titleEn": { "type": "string", "maxLength": 250 },
+        "image": { "type": "string", "maxLength": 700000 },
+        "subCards": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "key", "titleFa", "titleEn", "image", "updatedAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Industrial woodworking machine or tooling catalog item.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "order": { "type": "number" },
+        "titleFa": { "type": "string", "maxLength": 250 },
+        "titleEn": { "type": "string", "maxLength": 250 },
+        "category": {
+          "type": "string",
+          "enum": ["saws", "edgebanders", "cnc", "blades", "refurbished"]
+        },
+        "brand": { "type": "string", "maxLength": 120 },
+        "model": { "type": "string", "maxLength": 120 },
+        "condition": { "type": "string", "enum": ["new", "used"] },
+        "image": { "type": "string", "maxLength": 700000 },
+        "badgeFa": { "type": "string", "maxLength": 120 },
+        "badgeEn": { "type": "string", "maxLength": 120 },
+        "isActive": { "type": "boolean" },
+        "tags": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "titleFa", "titleEn", "category", "brand", "model", "condition", "image", "updatedAt"]
+    },
+    "MediaItem": {
+      "title": "MediaItem",
+      "description": "Article, news post, video, or technical project.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "order": { "type": "number" },
+        "type": { "type": "string", "enum": ["news", "article", "video", "project"] },
+        "titleFa": { "type": "string", "maxLength": 300 },
+        "titleEn": { "type": "string", "maxLength": 300 },
+        "image": { "type": "string", "maxLength": 700000 },
+        "isActive": { "type": "boolean" },
+        "tags": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "titleFa", "titleEn", "image", "updatedAt"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "Marketing campaign landing page definition.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "order": { "type": "number" },
+        "slug": { "type": "string", "maxLength": 150 },
+        "titleFa": { "type": "string", "maxLength": 250 },
+        "titleEn": { "type": "string", "maxLength": 250 },
+        "heroImage": { "type": "string", "maxLength": 700000 },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "slug", "titleFa", "titleEn", "heroImage", "isActive", "updatedAt"]
+    },
+    "BrandAsset": {
+      "title": "BrandAsset",
+      "description": "Categorized media and visual brand asset metadata.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "titleFa": { "type": "string", "maxLength": 200 },
+        "titleEn": { "type": "string", "maxLength": 200 },
+        "category": {
+          "type": "string",
+          "enum": ["logo", "hero", "departments", "catalog", "campaigns", "media", "photo", "brandbook", "certificate"]
+        },
+        "url": { "type": "string", "maxLength": 700000 },
+        "fileSize": { "type": "string", "maxLength": 40 },
+        "fileType": { "type": "string", "maxLength": 60 },
+        "uploadedAt": { "type": "string", "maxLength": 80 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "titleFa", "titleEn", "category", "url", "fileSize", "fileType", "uploadedAt", "updatedAt"]
+    },
+    "SharpeningOrder": {
+      "title": "SharpeningOrder",
+      "description": "Customer saw blade sharpening service order linked to userId.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 5, "maxLength": 40 },
+        "city": { "type": "string", "maxLength": 120 },
+        "bladeType": { "type": "string", "maxLength": 120 },
+        "diameter": { "type": "string", "maxLength": 60 },
+        "teethCount": { "type": "string", "maxLength": 40 },
+        "serviceType": { "type": "string", "maxLength": 160 },
+        "quantity": { "type": "number" },
+        "estimatedPrice": { "type": "string", "maxLength": 160 },
+        "status": {
+          "type": "string",
+          "enum": ["new", "in_progress", "completed", "cancelled"]
+        },
+        "createdAtLabel": { "type": "string", "maxLength": 80 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "customerName", "phone", "city", "bladeType", "diameter", "teethCount", "serviceType", "quantity", "estimatedPrice", "status", "createdAt", "updatedAt"]
+    },
+    "Inquiry": {
+      "title": "Inquiry",
+      "description": "Customer consultation or support inquiry linked to userId.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 5, "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 200 },
+        "department": { "type": "string", "maxLength": 160 },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 250 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "status": {
+          "type": "string",
+          "enum": ["new", "contacted", "resolved"]
+        },
+        "createdAtLabel": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name", "phone", "department", "subject", "message", "status", "createdAt", "updatedAt"]
+    },
+    "CampaignInquiry": {
+      "title": "CampaignInquiry",
+      "description": "Marketing campaign registration submitted by an authenticated user.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "campaignId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "campaignTitle": { "type": "string", "minLength": 1, "maxLength": 250 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 5, "maxLength": 40 },
+        "city": { "type": "string", "maxLength": 120 },
+        "workshopType": { "type": "string", "maxLength": 160 },
+        "interestedMachine": { "type": "string", "maxLength": 250 },
+        "paymentPreference": {
+          "type": "string",
+          "enum": ["cash", "installment", "lease"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["new", "contacted", "contracted", "archived"]
+        },
+        "createdAtLabel": { "type": "string", "maxLength": 80 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "campaignId", "campaignTitle", "fullName", "phone", "city", "workshopType", "interestedMachine", "paymentPreference", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/user_profiles/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores authenticated user display settings and language/theme preferences."
+    },
+    "/user_profiles/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Isolated PII (email, phone) accessible only to the owning user or admin."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted administrator roster."
+    },
+    "/site_configs/{configId}": {
+      "schema": { "$ref": "#/entities/SiteConfigDoc" },
+      "description": "Stores site-wide settings, section customizations, and navigation links."
+    },
+    "/hero_slides/{slideId}": {
+      "schema": { "$ref": "#/entities/HeroSlide" },
+      "description": "Public hero carousel slides managed by admins."
+    },
+    "/departments/{deptId}": {
+      "schema": { "$ref": "#/entities/Department" },
+      "description": "Four specialized RCG department pillars and sub-cards."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Industrial woodworking machines and cutting tools catalog."
+    },
+    "/media_items/{mediaId}": {
+      "schema": { "$ref": "#/entities/MediaItem" },
+      "description": "Technical articles, news, videos, and workshop projects."
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/Campaign" },
+      "description": "Active marketing campaign landing pages."
+    },
+    "/brand_assets/{assetId}": {
+      "schema": { "$ref": "#/entities/BrandAsset" },
+      "description": "Categorized brand gallery and asset archive."
+    },
+    "/sharpening_orders/{orderId}": {
+      "schema": { "$ref": "#/entities/SharpeningOrder" },
+      "description": "Customer saw blade sharpening orders scoped by userId."
+    },
+    "/inquiries/{inquiryId}": {
+      "schema": { "$ref": "#/entities/Inquiry" },
+      "description": "Customer consultation & support inquiries scoped by userId."
+    },
+    "/campaign_inquiries/{inquiryId}": {
+      "schema": { "$ref": "#/entities/CampaignInquiry" },
+      "description": "Marketing campaign leads scoped by userId."
+    }
+  }
+}

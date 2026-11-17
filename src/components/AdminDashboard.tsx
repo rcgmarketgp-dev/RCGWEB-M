@@ -26,6 +26,8 @@ import { AdminAnalyticsCharts } from './AdminAnalyticsCharts';
 import { NavigationManager } from './NavigationManager';
 import { RcgLogo } from './RcgLogo';
 import { GalleryPickerModal } from './GalleryPickerModal';
+import { GoogleBrandIcon } from './GoogleBrandIcon';
+import { useFirebase } from '../context/FirebaseContext';
 import {
   InstagramBrandIcon,
   LinkedInBrandIcon,
@@ -70,6 +72,14 @@ import {
   MousePointerClick,
   Palette,
   FolderOpen,
+  CloudUpload,
+  CheckSquare,
+  Square,
+  Tag,
+  Eye,
+  EyeOff,
+  Check,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Disc as PhosphorDisc,
@@ -126,6 +136,9 @@ interface AdminDashboardProps {
   onUpdateNavLinks: (links: NavLinkItem[]) => void;
   settings: SiteSettings;
   onUpdateSettings: (settings: SiteSettings) => void;
+  onOpenUiThemePicker?: () => void;
+  onPublishAllToCloud?: () => Promise<void>;
+  cloudSyncing?: boolean;
   onResetToDefaults: () => void;
 }
 
@@ -171,15 +184,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateNavLinks,
   settings,
   onUpdateSettings,
+  onOpenUiThemePicker,
+  onPublishAllToCloud,
+  cloudSyncing = false,
   onResetToDefaults,
 }) => {
+  const { user, isAdmin, signInWithGoogle } = useFirebase();
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Catalog filters
+  // Catalog filters & batch selection
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategoryFilter, setCatalogCategoryFilter] = useState<string>('all');
-  const [catalogStatusFilter, setCatalogStatusFilter] = useState<'all' | 'active' | 'installment' | 'featured'>('all');
+  const [catalogStatusFilter, setCatalogStatusFilter] = useState<'all' | 'active' | 'hidden' | 'installment' | 'featured'>('all');
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [showProductBulkTagPanel, setShowProductBulkTagPanel] = useState(false);
+  const [productBulkTagInput, setProductBulkTagInput] = useState('');
+  const [productBulkTagMode, setProductBulkTagMode] = useState<'add' | 'remove' | 'clear'>('add');
+  const [productBulkBadgeFa, setProductBulkBadgeFa] = useState('');
+  const [productBulkBadgeEn, setProductBulkBadgeEn] = useState('');
+  const [confirmBulkDeleteProducts, setConfirmBulkDeleteProducts] = useState(false);
+
+  // Media filters & batch selection
+  const [mediaSearch, setMediaSearch] = useState('');
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<'all' | MediaItem['type']>('all');
+  const [mediaVisibilityFilter, setMediaVisibilityFilter] = useState<'all' | 'active' | 'hidden'>('all');
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const [showMediaBulkTagPanel, setShowMediaBulkTagPanel] = useState(false);
+  const [mediaBulkTagInput, setMediaBulkTagInput] = useState('');
+  const [mediaBulkTagMode, setMediaBulkTagMode] = useState<'add' | 'remove' | 'clear'>('add');
+  const [confirmBulkDeleteMedia, setConfirmBulkDeleteMedia] = useState(false);
 
   // Campaign editing
   const [editingCampaign, setEditingCampaign] = useState<CampaignLanding | null>(null);
@@ -225,6 +259,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   useEffect(() => {
     setLocalSettings({ ...settings });
   }, [settings]);
+
+  useEffect(() => {
+    const validIds = new Set(products.map((p) => p.id));
+    setSelectedProductIds((prev) => {
+      const next = prev.filter((id) => validIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [products]);
+
+  useEffect(() => {
+    const validIds = new Set(mediaItems.map((m) => m.id));
+    setSelectedMediaIds((prev) => {
+      const next = prev.filter((id) => validIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [mediaItems]);
+
+  useEffect(() => {
+    if (selectedProductIds.length === 0) {
+      setConfirmBulkDeleteProducts(false);
+      setShowProductBulkTagPanel(false);
+    }
+  }, [selectedProductIds.length]);
+
+  useEffect(() => {
+    if (selectedMediaIds.length === 0) {
+      setConfirmBulkDeleteMedia(false);
+      setShowMediaBulkTagPanel(false);
+    }
+  }, [selectedMediaIds.length]);
 
   if (!isOpen) return null;
 
@@ -331,6 +395,114 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setEditingProduct(null);
       showToast(isRtl ? 'اطلاعات دستگاه به‌روزرسانی شد' : 'Machine updated');
     }
+  };
+
+  const parseBulkTags = (raw: string): string[] =>
+    Array.from(
+      new Set(
+        raw
+          .split(/[,\n،]+/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 12);
+
+  const handleToggleSelectProduct = (prodId: string) => {
+    setConfirmBulkDeleteProducts(false);
+    setSelectedProductIds((prev) =>
+      prev.includes(prodId) ? prev.filter((id) => id !== prodId) : [...prev, prodId]
+    );
+  };
+
+  const handleToggleSelectAllProducts = (filteredIds: string[]) => {
+    setConfirmBulkDeleteProducts(false);
+    const allSelected =
+      filteredIds.length > 0 && filteredIds.every((id) => selectedProductIds.includes(id));
+    if (allSelected) {
+      const removeSet = new Set(filteredIds);
+      setSelectedProductIds((prev) => prev.filter((id) => !removeSet.has(id)));
+    } else {
+      setSelectedProductIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const handleBulkProductVisibility = (visible: boolean) => {
+    if (selectedProductIds.length === 0) return;
+    const selectedSet = new Set(selectedProductIds);
+    const updated = products.map((p) =>
+      selectedSet.has(p.id) ? { ...p, isActive: visible } : p
+    );
+    onUpdateProducts(updated);
+    showToast(
+      isRtl
+        ? `وضعیت نمایش ${selectedSet.size} دستگاه به «${visible ? 'نمایش در سایت' : 'مخفی'}» تغییر یافت`
+        : `Updated visibility for ${selectedSet.size} machine(s) to ${visible ? 'Visible' : 'Hidden'}`
+    );
+  };
+
+  const handleBulkDeleteProducts = () => {
+    if (selectedProductIds.length === 0) return;
+    const selectedSet = new Set(selectedProductIds);
+    const updated = products.filter((p) => !selectedSet.has(p.id));
+    onUpdateProducts(updated);
+    setSelectedProductIds([]);
+    setConfirmBulkDeleteProducts(false);
+    showToast(
+      isRtl
+        ? `${selectedSet.size} دستگاه به‌صورت گروهی حذف شد`
+        : `${selectedSet.size} machine(s) deleted`
+    );
+  };
+
+  const handleBulkTagProducts = (presetTags?: string[]) => {
+    if (selectedProductIds.length === 0) return;
+    const selectedSet = new Set(selectedProductIds);
+    const parsedTags = presetTags ?? parseBulkTags(productBulkTagInput);
+    const hasBadgeUpdate =
+      productBulkBadgeFa.trim().length > 0 || productBulkBadgeEn.trim().length > 0;
+
+    if (productBulkTagMode !== 'clear' && parsedTags.length === 0 && !hasBadgeUpdate) {
+      showToast(
+        isRtl
+          ? 'لطفاً حداقل یک برچسب یا نشان کارت وارد کنید'
+          : 'Please enter at least one tag or badge label'
+      );
+      return;
+    }
+
+    const updated = products.map((p) => {
+      if (!selectedSet.has(p.id)) return p;
+      const existingTags = p.tags || [];
+      let nextTags = existingTags;
+
+      if (productBulkTagMode === 'clear') {
+        nextTags = [];
+      } else if (productBulkTagMode === 'remove') {
+        const removeSet = new Set(parsedTags.map((t) => t.toLowerCase()));
+        nextTags = existingTags.filter((t) => !removeSet.has(t.toLowerCase()));
+      } else if (parsedTags.length > 0) {
+        nextTags = Array.from(new Set([...existingTags, ...parsedTags])).slice(0, 12);
+      }
+
+      return {
+        ...p,
+        tags: nextTags,
+        ...(productBulkBadgeFa.trim() ? { badgeFa: productBulkBadgeFa.trim() } : {}),
+        ...(productBulkBadgeEn.trim() ? { badgeEn: productBulkBadgeEn.trim() } : {}),
+      };
+    });
+
+    onUpdateProducts(updated);
+    if (!presetTags) {
+      setProductBulkTagInput('');
+      setProductBulkBadgeFa('');
+      setProductBulkBadgeEn('');
+    }
+    showToast(
+      isRtl
+        ? `برچسب‌های ${selectedSet.size} دستگاه با موفقیت به‌روزرسانی شد`
+        : `Tags updated for ${selectedSet.size} machine(s)`
+    );
   };
 
   const handleCreateFromPreset = (
@@ -529,6 +701,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showToast(isRtl ? 'مطلب حذف شد' : 'Post deleted');
   };
 
+  const handleToggleMediaActive = (mediaId: string) => {
+    const updated = mediaItems.map((m) =>
+      m.id === mediaId ? { ...m, isActive: m.isActive === false ? true : false } : m
+    );
+    onUpdateMediaItems(updated);
+    showToast(isRtl ? 'وضعیت نمایش مطلب تغییر یافت' : 'Post visibility updated');
+  };
+
   const handleSaveMedia = (item: MediaItem) => {
     if (isAddingMedia) {
       onUpdateMediaItems([item, ...mediaItems]);
@@ -541,6 +721,93 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setEditingMedia(null);
       showToast(isRtl ? 'مطلب با موفقیت ذخیره شد' : 'Post updated');
     }
+  };
+
+  const handleToggleSelectMedia = (mediaId: string) => {
+    setConfirmBulkDeleteMedia(false);
+    setSelectedMediaIds((prev) =>
+      prev.includes(mediaId) ? prev.filter((id) => id !== mediaId) : [...prev, mediaId]
+    );
+  };
+
+  const handleToggleSelectAllMedia = (filteredIds: string[]) => {
+    setConfirmBulkDeleteMedia(false);
+    const allSelected =
+      filteredIds.length > 0 && filteredIds.every((id) => selectedMediaIds.includes(id));
+    if (allSelected) {
+      const removeSet = new Set(filteredIds);
+      setSelectedMediaIds((prev) => prev.filter((id) => !removeSet.has(id)));
+    } else {
+      setSelectedMediaIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const handleBulkMediaVisibility = (visible: boolean) => {
+    if (selectedMediaIds.length === 0) return;
+    const selectedSet = new Set(selectedMediaIds);
+    const updated = mediaItems.map((m) =>
+      selectedSet.has(m.id) ? { ...m, isActive: visible } : m
+    );
+    onUpdateMediaItems(updated);
+    showToast(
+      isRtl
+        ? `وضعیت انتشار ${selectedSet.size} مطلب به «${visible ? 'منتشر شده' : 'مخفی'}» تغییر یافت`
+        : `Updated visibility for ${selectedSet.size} media item(s) to ${visible ? 'Visible' : 'Hidden'}`
+    );
+  };
+
+  const handleBulkDeleteMedia = () => {
+    if (selectedMediaIds.length === 0) return;
+    const selectedSet = new Set(selectedMediaIds);
+    const updated = mediaItems.filter((m) => !selectedSet.has(m.id));
+    onUpdateMediaItems(updated);
+    setSelectedMediaIds([]);
+    setConfirmBulkDeleteMedia(false);
+    showToast(
+      isRtl
+        ? `${selectedSet.size} مطلب به‌صورت گروهی حذف شد`
+        : `${selectedSet.size} media item(s) deleted`
+    );
+  };
+
+  const handleBulkTagMedia = (presetTags?: string[]) => {
+    if (selectedMediaIds.length === 0) return;
+    const selectedSet = new Set(selectedMediaIds);
+    const parsedTags = presetTags ?? parseBulkTags(mediaBulkTagInput);
+
+    if (mediaBulkTagMode !== 'clear' && parsedTags.length === 0) {
+      showToast(
+        isRtl ? 'لطفاً حداقل یک برچسب وارد کنید' : 'Please enter at least one tag'
+      );
+      return;
+    }
+
+    const updated = mediaItems.map((m) => {
+      if (!selectedSet.has(m.id)) return m;
+      const existingTags = m.tags || [];
+      let nextTags = existingTags;
+
+      if (mediaBulkTagMode === 'clear') {
+        nextTags = [];
+      } else if (mediaBulkTagMode === 'remove') {
+        const removeSet = new Set(parsedTags.map((t) => t.toLowerCase()));
+        nextTags = existingTags.filter((t) => !removeSet.has(t.toLowerCase()));
+      } else {
+        nextTags = Array.from(new Set([...existingTags, ...parsedTags])).slice(0, 12);
+      }
+
+      return { ...m, tags: nextTags };
+    });
+
+    onUpdateMediaItems(updated);
+    if (!presetTags) {
+      setMediaBulkTagInput('');
+    }
+    showToast(
+      isRtl
+        ? `برچسب‌های ${selectedSet.size} مطلب به‌روزرسانی شد`
+        : `Tags updated for ${selectedSet.size} media item(s)`
+    );
   };
 
   // --- Campaigns ---
@@ -651,7 +918,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }`;
 
   const inputClass =
-    'w-full bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-white focus:outline-none transition-colors';
+    'w-full bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900 focus:border-[#FD5202] rounded-xl px-3.5 py-2 min-h-[40px] text-xs text-slate-900 dark:text-white focus:outline-none transition-colors';
 
   const cardClass =
     'bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900/60 rounded-2xl shadow-sm';
@@ -660,40 +927,90 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 dark:bg-[#050C1F] text-slate-900 dark:text-white">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-[#091A42] dark:bg-[#FD5202] text-white px-6 py-2.5 rounded-xl shadow-xl text-xs font-bold flex items-center gap-2 border border-white/15">
-          <CheckCircle2 className="w-4 h-4 text-[#FD5202] dark:text-white" />
-          <span>{toastMessage}</span>
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-md justify-center bg-[#091A42] dark:bg-[#FD5202] text-white px-4 sm:px-6 py-2.5 rounded-xl shadow-xl text-xs font-bold flex items-center gap-2 border border-white/15">
+          <CheckCircle2 className="w-4 h-4 text-[#FD5202] dark:text-white shrink-0" />
+          <span className="truncate">{toastMessage}</span>
         </div>
       )}
 
       {/* Top Navbar */}
-      <header className="h-16 px-4 sm:px-6 bg-white dark:bg-[#091A42] border-b border-slate-200 dark:border-blue-900/60 flex items-center justify-between shrink-0 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-[#091A42] dark:bg-[#FD5202] text-white">
-            <Shield className="w-5 h-5" />
+      <header className="h-16 px-3 sm:px-6 bg-white dark:bg-[#091A42] border-b border-slate-200 dark:border-blue-900/60 flex items-center justify-between gap-2 shrink-0 shadow-xs">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="p-2 rounded-xl bg-[#091A42] dark:bg-[#FD5202] text-white shrink-0">
+            <Shield className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <h1 className="text-sm sm:text-base font-extrabold text-[#091A42] dark:text-white">
+          <div className="min-w-0">
+            <h1 className="text-xs sm:text-base font-extrabold text-[#091A42] dark:text-white truncate">
               {t.panelTitle}
             </h1>
-            <p className="text-[11px] text-slate-500 dark:text-[#A6D6FE]">
+            <p className="hidden sm:block text-[11px] text-slate-500 dark:text-[#A6D6FE] truncate">
               {isRtl ? 'مدیریت آنلاین و دوزبانه کلیه بخش‌های وب‌سایت RCG' : 'Real-Time Bilingual CMS & Operations Console'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {isAdmin ? (
+            onPublishAllToCloud && (
+              <button
+                onClick={async () => {
+                  await onPublishAllToCloud();
+                  showToast(isRtl ? 'کلیه تنظیمات با موفقیت در Firestore منتشر شد' : 'Published all data to Firestore');
+                }}
+                disabled={cloudSyncing}
+                className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[38px] text-xs font-bold rounded-xl bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white dark:bg-emerald-950/70 dark:text-emerald-300 dark:hover:bg-emerald-600 dark:hover:text-white border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer disabled:opacity-60"
+                title={isRtl ? 'انتشار کامل و همگام‌سازی پایگاه داده ابری' : 'Publish & Sync All to Cloud'}
+              >
+                <CloudUpload className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden lg:inline">
+                  {cloudSyncing
+                    ? isRtl
+                      ? 'در حال همگام‌سازی...'
+                      : 'Syncing...'
+                    : isRtl
+                    ? 'همگام‌سازی ابری فعال'
+                    : 'Cloud Sync'}
+                </span>
+              </button>
+            )
+          ) : (
+            <button
+              onClick={() => void signInWithGoogle()}
+              className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[38px] text-xs font-bold rounded-xl bg-blue-50 hover:bg-blue-100 text-[#091A42] dark:bg-blue-950 dark:text-white border border-blue-200 dark:border-blue-800 transition-colors cursor-pointer"
+              title={
+                user
+                  ? isRtl
+                    ? `کاربر فعلی (${user.email}) دسترسی ادمین کلود ندارد`
+                    : `Signed in as ${user.email} (not admin)`
+                  : isRtl
+                  ? 'ورود با ایمیل مدیر کل جهت همگام‌سازی Firestore'
+                  : 'Sign in as Admin for Cloud Sync'
+              }
+            >
+              <GoogleBrandIcon className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden lg:inline">
+                {user
+                  ? isRtl
+                    ? 'تغییر به حساب ادمین'
+                    : 'Switch to Admin'
+                  : isRtl
+                  ? 'اتصال ادمین گوگل'
+                  : 'Admin Sign-In'}
+              </span>
+            </button>
+          )}
+
           {onEnterPageEditMode && (
             <button
               onClick={onEnterPageEditMode}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-colors cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 min-h-[38px] text-xs font-bold rounded-xl border transition-colors cursor-pointer ${
                 isPageEditMode
                   ? 'bg-[#FD5202] border-[#FD5202] text-white'
                   : 'bg-orange-50 hover:bg-[#FD5202] text-[#FD5202] hover:text-white dark:bg-[#FD5202]/20 dark:hover:bg-[#FD5202] border-orange-200 dark:border-[#FD5202]/50'
               }`}
               title={isRtl ? 'فعال‌سازی حالت تنظیمات صفحه و ویرایش مستقیم روی سایت' : 'Enable Live Visual Page Edit Mode'}
             >
-              <MousePointerClick className="w-3.5 h-3.5" />
+              <MousePointerClick className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden md:inline">
                 {isRtl ? 'حالت تنظیمات صفحه (روی سایت)' : 'Live Page Edit Mode'}
               </span>
@@ -703,7 +1020,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {onThemeToggle && (
             <button
               onClick={onThemeToggle}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-blue-950 dark:hover:bg-blue-900 border border-slate-200 dark:border-blue-800 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              className="p-2 min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-blue-950 dark:hover:bg-blue-900 border border-slate-200 dark:border-blue-800 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
               title={isDark ? (isRtl ? 'حالت روز' : 'Light Mode') : (isRtl ? 'حالت شب' : 'Dark Mode')}
             >
               {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#091A42]" />}
@@ -715,26 +1032,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               onResetToDefaults();
               showToast(isRtl ? 'پیش‌فرض‌های برند با موفقیت بازیابی شدند' : 'Defaults restored');
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-blue-950 dark:hover:bg-rose-950/60 border border-slate-200 dark:border-blue-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[38px] text-xs font-semibold rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-blue-950 dark:hover:bg-rose-950/60 border border-slate-200 dark:border-blue-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+            title={t.resetDefaults}
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3.5 h-3.5 shrink-0" />
             <span className="hidden sm:inline">{t.resetDefaults}</span>
           </button>
 
           <button
             onClick={onClose}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl bg-[#091A42] hover:bg-[#FD5202] dark:bg-slate-800 dark:hover:bg-[#FD5202] text-white transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 min-h-[38px] text-xs font-bold rounded-xl bg-[#091A42] hover:bg-[#FD5202] dark:bg-slate-800 dark:hover:bg-[#FD5202] text-white transition-colors cursor-pointer"
           >
-            <X className="w-4 h-4" />
-            <span>{t.closeBtn}</span>
+            <X className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">{t.closeBtn}</span>
           </button>
         </div>
       </header>
 
       {/* Dashboard Body */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Clean Sidebar */}
-        <aside className="w-56 sm:w-64 bg-white dark:bg-[#060F26] border-r rtl:border-r-0 rtl:border-l border-slate-200 dark:border-blue-900/50 p-3.5 space-y-1 shrink-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        {/* Desktop Sidebar */}
+        <aside className="hidden md:block w-60 lg:w-64 bg-white dark:bg-[#060F26] border-r rtl:border-r-0 rtl:border-l border-slate-200 dark:border-blue-900/50 p-3.5 space-y-1 shrink-0 overflow-y-auto">
           <button onClick={() => setActiveTab('overview')} className={navBtnClass('overview')}>
             <div className="flex items-center gap-2.5">
               <LayoutDashboard className="w-4 h-4 shrink-0" />
@@ -841,31 +1159,75 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
         </aside>
 
+        {/* Mobile Horizontal Tab Navigation Bar */}
+        <nav className="md:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar px-3 py-2 bg-white dark:bg-[#060F26] border-b border-slate-200 dark:border-blue-900/50 shrink-0">
+          {[
+            { id: 'overview', label: t.tabOverview },
+            { id: 'campaigns', label: t.tabCampaigns, count: campaigns.length, highlight: true },
+            { id: 'departments', label: isRtl ? '۴ رکن' : '4 Pillars', count: departments.length },
+            { id: 'catalog', label: t.tabCatalog, count: products.length },
+            { id: 'sharpening', label: t.tabSharpening, count: sharpeningOrders.length },
+            { id: 'inquiries', label: t.tabInquiries, count: inquiries.length + campaignInquiries.length },
+            { id: 'media', label: t.tabMedia, count: mediaItems.length },
+            { id: 'assets', label: t.tabAssets, count: brandAssets.length },
+            { id: 'slides', label: t.tabSlides },
+            { id: 'navigation', label: t.tabNavigation },
+            { id: 'settings', label: t.tabSettings },
+          ].map((item) => {
+            const active = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id as typeof activeTab)}
+                className={`whitespace-nowrap shrink-0 min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                  active
+                    ? item.highlight
+                      ? 'bg-[#FD5202] text-white border-[#FD5202] shadow-xs'
+                      : 'bg-[#144AE0] text-white border-[#144AE0] shadow-xs'
+                    : 'bg-slate-50 dark:bg-blue-950/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900/50'
+                }`}
+              >
+                <span>{item.label}</span>
+                {typeof item.count === 'number' && (
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full tabular-nums ${
+                      active ? 'bg-white/20 text-white' : 'bg-slate-200/80 dark:bg-blue-900/60'
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
         {/* Tab Content Canvas */}
-        <main className="flex-1 p-5 sm:p-8 overflow-y-auto bg-slate-50 dark:bg-[#050C1F]">
+        <main className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto bg-slate-50 dark:bg-[#050C1F]">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
-            <div className="space-y-8 max-w-6xl">
+            <div className="space-y-6 sm:space-y-8 max-w-6xl">
               <div>
-                <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabOverview}</h2>
+                <h2 className="text-lg sm:text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabOverview}</h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   {isRtl ? 'خلاصه آمار سامانه، نمودارهای عملکرد، سفارش‌های تیزکاری و سرنخ‌های کمپین' : 'Executive overview, KPI trends, orders, and leads'}
                 </p>
               </div>
 
               {/* 4 KPI Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className={`${cardClass} p-5 space-y-2`}>
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t.tabSharpening}</span>
-                  <p className="text-2xl font-black text-[#FD5202] font-mono tabular-nums">{sharpeningOrders.length}</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className={`${cardClass} p-3.5 sm:p-5 space-y-1.5 sm:space-y-2`}>
+                  <span className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 block truncate">{t.tabSharpening}</span>
+                  <p className="text-xl sm:text-2xl font-black text-[#FD5202] font-mono tabular-nums">{sharpeningOrders.length}</p>
                   <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                     {sharpeningOrders.filter((o) => o.status === 'new').length} {t.statusNew}
                   </p>
                 </div>
 
-                <div className={`${cardClass} p-5 space-y-2`}>
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t.tabInquiries}</span>
-                  <p className="text-2xl font-black text-[#144AE0] dark:text-[#A6D6FE] font-mono tabular-nums">
+                <div className={`${cardClass} p-3.5 sm:p-5 space-y-1.5 sm:space-y-2`}>
+                  <span className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 block truncate">{t.tabInquiries}</span>
+                  <p className="text-xl sm:text-2xl font-black text-[#144AE0] dark:text-[#A6D6FE] font-mono tabular-nums">
                     {inquiries.length + campaignInquiries.length}
                   </p>
                   <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
@@ -873,15 +1235,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </p>
                 </div>
 
-                <div className={`${cardClass} p-5 space-y-2`}>
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t.tabCatalog}</span>
-                  <p className="text-2xl font-black text-[#091A42] dark:text-white font-mono tabular-nums">{products.length}</p>
+                <div className={`${cardClass} p-3.5 sm:p-5 space-y-1.5 sm:space-y-2`}>
+                  <span className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 block truncate">{t.tabCatalog}</span>
+                  <p className="text-xl sm:text-2xl font-black text-[#091A42] dark:text-white font-mono tabular-nums">{products.length}</p>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">{isRtl ? 'دستگاه در کاتالوگ' : 'In catalog'}</p>
                 </div>
 
-                <div className={`${cardClass} p-5 space-y-2`}>
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t.tabCampaigns}</span>
-                  <p className="text-2xl font-black text-[#091A42] dark:text-white font-mono tabular-nums">{campaigns.length}</p>
+                <div className={`${cardClass} p-3.5 sm:p-5 space-y-1.5 sm:space-y-2`}>
+                  <span className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 block truncate">{t.tabCampaigns}</span>
+                  <p className="text-xl sm:text-2xl font-black text-[#091A42] dark:text-white font-mono tabular-nums">{campaigns.length}</p>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     {campaigns.filter((c) => c.isActive).length} {isRtl ? 'کمپین فعال' : 'Active'}
                   </p>
@@ -898,22 +1260,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 isDark={isDark}
               />
 
-              {/* Recent Sharpening Orders Quick Table */}
-              <div className={`${cardClass} p-6 space-y-4`}>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-[#091A42] dark:text-white flex items-center gap-2">
-                    <PhosphorDisc weight="duotone" className="w-4 h-4 text-[#FD5202]" />
+              {/* Recent Sharpening Orders Quick View */}
+              <div className={`${cardClass} p-4 sm:p-6 space-y-4`}>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-xs sm:text-sm font-bold text-[#091A42] dark:text-white flex items-center gap-2">
+                    <PhosphorDisc weight="duotone" className="w-4 h-4 text-[#FD5202] shrink-0" />
                     <span>{isRtl ? 'جدیدترین سفارش‌های تیزکاری اره الماسه' : 'Recent Tool Sharpening Orders'}</span>
                   </h3>
                   <button
                     onClick={() => setActiveTab('sharpening')}
-                    className="text-xs font-bold text-[#144AE0] dark:text-[#A6D6FE] hover:underline cursor-pointer"
+                    className="text-xs font-bold text-[#144AE0] dark:text-[#A6D6FE] hover:underline cursor-pointer shrink-0"
                   >
                     {isRtl ? 'مشاهده همه' : 'View All'}
                   </button>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-xs text-slate-600 dark:text-slate-300">
                     <thead className="border-b border-slate-200 dark:border-blue-900 text-slate-500 dark:text-slate-400 text-right rtl:text-right ltr:text-left">
                       <tr>
@@ -950,6 +1313,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Mobile Stacked Order Cards */}
+                <div className="md:hidden space-y-2.5">
+                  {sharpeningOrders.slice(0, 4).map((order) => (
+                    <div
+                      key={order.id}
+                      className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-bold text-[#FD5202]">#{order.id}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            order.status === 'new'
+                              ? 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                              : order.status === 'in_progress'
+                              ? 'bg-blue-50 dark:bg-blue-950 text-[#144AE0] dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                              : 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                          }`}
+                        >
+                          {order.status === 'new' ? t.statusNew : order.status === 'in_progress' ? t.statusInProgress : t.statusCompleted}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-[#091A42] dark:text-white">{order.customerName}</span>
+                        <a href={`tel:${order.phone}`} className="font-mono text-[#144AE0] dark:text-[#A6D6FE] tabular-nums">
+                          {order.phone}
+                        </a>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                        <span>{order.bladeType} - {order.teethCount}</span>
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{order.estimatedPrice}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1037,14 +1435,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {campaigns.map((camp) => (
                   <div
                     key={camp.id}
-                    className={`${cardClass} p-5 sm:p-6 hover:border-[#FD5202]/50 transition-all space-y-4`}
+                    className={`${cardClass} p-4 sm:p-6 hover:border-[#FD5202]/50 transition-all space-y-4`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                      <div className="flex items-start gap-4">
+                      <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
                         <img
                           src={camp.heroImage}
                           alt=""
-                          className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl object-cover border border-slate-200 dark:border-blue-800/50 shrink-0"
+                          className="w-full sm:w-28 h-40 sm:h-28 rounded-xl object-cover border border-slate-200 dark:border-blue-800/50 shrink-0"
                         />
                         <div className="space-y-1.5">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1070,11 +1468,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {isRtl ? camp.headlineFa : camp.headlineEn}
                           </p>
 
-                          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400 pt-1 tabular-nums">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-slate-500 dark:text-slate-400 pt-1 tabular-nums">
                             <span className="text-[#FD5202] font-bold">{isRtl ? camp.specialOfferFa : camp.specialOfferEn}</span>
-                            <span>·</span>
+                            <span className="hidden sm:inline">·</span>
                             <span className="font-mono">{isRtl ? `بازدید: ${camp.viewsCount ?? 120}` : `Views: ${camp.viewsCount ?? 120}`}</span>
-                            <span>·</span>
+                            <span className="hidden sm:inline">·</span>
                             <span className="text-emerald-600 dark:text-emerald-400 font-bold font-mono">
                               {isRtl ? `ثبت‌نام‌ها: ${camp.conversionsCount ?? 18}` : `Leads: ${camp.conversionsCount ?? 18}`}
                             </span>
@@ -1082,10 +1480,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap sm:flex-col items-end gap-2 shrink-0">
+                      <div className="w-full sm:w-auto flex flex-wrap sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
                         <button
                           onClick={() => onPreviewCampaign(camp)}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#FD5202] to-[#E04600] text-white text-xs font-bold shadow-sm hover:shadow-md transition-all cursor-pointer"
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#FD5202] to-[#E04600] text-white text-xs font-bold shadow-sm hover:shadow-md transition-all cursor-pointer"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                           <span>{isRtl ? 'پیش‌نمایش لندینگ' : 'Preview Landing'}</span>
@@ -1130,10 +1528,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Campaign Leads Table */}
-              <div className={`${cardClass} p-6 space-y-4`}>
+              <div className={`${cardClass} p-4 sm:p-6 space-y-4`}>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-base font-bold text-[#091A42] dark:text-white flex items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-[#091A42] dark:text-white flex items-center gap-2">
                       <PhosphorMegaphone weight="duotone" className="w-4 h-4 text-[#FD5202]" />
                       <span>{isRtl ? 'متقاضیان صفحات فرود (Leads)' : 'Campaign Landing Leads'}</span>
                     </h3>
@@ -1147,7 +1545,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <select
                       value={campaignInquiryFilter}
                       onChange={(e) => setCampaignInquiryFilter(e.target.value)}
-                      className="bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900 rounded-lg px-2.5 py-1 text-slate-900 dark:text-white focus:outline-none"
+                      className="bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900 rounded-lg px-2.5 py-1.5 min-h-[38px] text-slate-900 dark:text-white focus:outline-none"
                     >
                       <option value="all">{isRtl ? 'همه درخواست‌ها' : 'All Leads'}</option>
                       <option value="new">{isRtl ? 'جدید' : 'New'}</option>
@@ -1157,7 +1555,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* Desktop Leads Table */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-xs text-slate-600 dark:text-slate-300">
                     <thead className="border-b border-slate-200 dark:border-blue-900 text-slate-500 dark:text-slate-400 text-right rtl:text-right ltr:text-left">
                       <tr>
@@ -1211,6 +1610,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tbody>
                   </table>
                 </div>
+
+                {/* Mobile Stacked Lead Cards */}
+                <div className="md:hidden space-y-2.5">
+                  {campaignInquiries
+                    .filter((ci) => campaignInquiryFilter === 'all' || ci.status === campaignInquiryFilter)
+                    .map((inq) => (
+                      <div
+                        key={inq.id}
+                        className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-2 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-bold text-[#091A42] dark:text-white">#{inq.id}</span>
+                          <span className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-[#144AE0] dark:text-[#A6D6FE] font-bold text-[10px] border border-blue-200 dark:border-blue-800">
+                            {inq.paymentPreference === 'installment'
+                              ? isRtl ? 'اقساط' : 'Installments'
+                              : inq.paymentPreference === 'cash'
+                              ? isRtl ? 'نقدی' : 'Cash'
+                              : isRtl ? 'تعویض' : 'Trade-in'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900 dark:text-white">{inq.fullName}</span>
+                          <a href={`tel:${inq.phone}`} className="font-mono text-[#144AE0] dark:text-[#A6D6FE] tabular-nums">
+                            {inq.phone}
+                          </a>
+                        </div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                          {inq.city} ({inq.workshopType}) — <span className="font-semibold">{inq.campaignTitle}</span>
+                        </div>
+                        <div className="pt-1">
+                          <select
+                            value={inq.status}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                              handleUpdateCampaignInquiryStatus(inq.id, e.target.value as CampaignInquiry['status'])
+                            }
+                            className="w-full px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-800 text-slate-800 dark:text-white focus:outline-none"
+                          >
+                            <option value="new">{isRtl ? 'جدید' : 'New'}</option>
+                            <option value="contacted">{isRtl ? 'تماس گرفته شد' : 'Contacted'}</option>
+                            <option value="contracted">{isRtl ? 'قرارداد / بازدید' : 'Contracted'}</option>
+                            <option value="archived">{isRtl ? 'بایگانی' : 'Archived'}</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
             </div>
           )}
@@ -1219,7 +1664,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeTab === 'departments' && (
             <div className="space-y-6 max-w-6xl">
               <div>
-                <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">
+                <h2 className="text-lg sm:text-xl font-extrabold text-[#091A42] dark:text-white">
                   {isRtl ? 'مدیریت چهار رکن خدمات یکپارچه و تصاویر بخش‌ها' : '4 Service Pillars & Section Media Management'}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -1230,13 +1675,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Pillar Selector */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
                 {departments.map((dept, idx) => (
                   <button
                     key={dept.id}
                     type="button"
                     onClick={() => setActiveDeptTabIdx(idx)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                    className={`px-3.5 sm:px-4 py-2 min-h-[38px] whitespace-nowrap shrink-0 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
                       activeDeptTabIdx === idx
                         ? 'bg-[#144AE0] text-white border-[#144AE0] shadow-sm'
                         : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-blue-900'
@@ -1258,9 +1703,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 };
 
                 return (
-                  <div className={`${cardClass} p-6 space-y-6`}>
+                  <div className={`${cardClass} p-4 sm:p-6 space-y-5 sm:space-y-6`}>
                     {/* Live Header Preview strip of Pillar Card (showing synchronized RcgLogo) */}
-                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 flex items-center justify-between gap-4">
+                    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                       <RcgLogo
                         settings={localSettings}
                         isDark={isDark}
@@ -1762,14 +2207,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {sharpeningOrders.map((order) => (
                   <div
                     key={order.id}
-                    className={`${cardClass} p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}
+                    className={`${cardClass} p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}
                   >
                     <div className="space-y-1.5 flex-1">
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="font-mono font-bold text-sm text-[#FD5202] bg-orange-50 dark:bg-orange-950/40 px-2.5 py-0.5 rounded border border-orange-200 dark:border-orange-900/50">
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                        <span className="font-mono font-bold text-xs sm:text-sm text-[#FD5202] bg-orange-50 dark:bg-orange-950/40 px-2.5 py-0.5 rounded border border-orange-200 dark:border-orange-900/50">
                           {order.id}
                         </span>
-                        <h4 className="font-bold text-base text-[#091A42] dark:text-white">{order.customerName}</h4>
+                        <h4 className="font-bold text-sm sm:text-base text-[#091A42] dark:text-white">{order.customerName}</h4>
                         <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">({order.city})</span>
                         <span className="text-xs text-slate-400 font-mono">· {order.createdAt}</span>
                       </div>
@@ -1789,10 +2234,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
                       <button
                         onClick={() => handleUpdateOrderStatus(order.id, 'new')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                        className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                           order.status === 'new'
                             ? 'bg-amber-500 text-white'
                             : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
@@ -1802,7 +2247,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </button>
                       <button
                         onClick={() => handleUpdateOrderStatus(order.id, 'in_progress')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                        className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                           order.status === 'in_progress'
                             ? 'bg-[#144AE0] text-white'
                             : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
@@ -1812,7 +2257,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </button>
                       <button
                         onClick={() => handleUpdateOrderStatus(order.id, 'completed')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                        className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                           order.status === 'completed'
                             ? 'bg-emerald-600 text-white'
                             : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
@@ -1831,7 +2276,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeTab === 'inquiries' && (
             <div className="space-y-6 max-w-6xl">
               <div>
-                <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabInquiries}</h2>
+                <h2 className="text-lg sm:text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabInquiries}</h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   {isRtl ? 'پیام‌های دریافتی و درخواست‌های مشاوره کارگاهی' : 'Client consultation messages and inquiries'}
                 </p>
@@ -1839,9 +2284,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="space-y-4">
                 {inquiries.map((inq) => (
-                  <div key={inq.id} className={`${cardClass} p-5 space-y-3`}>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex flex-wrap items-center gap-2.5">
+                  <div key={inq.id} className={`${cardClass} p-4 sm:p-5 space-y-3`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                         <span className="font-mono font-bold text-xs text-[#144AE0] dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
                           {inq.id}
                         </span>
@@ -1854,16 +2299,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="text-xs text-slate-400 font-mono">{inq.createdAt}</span>
                     </div>
 
-                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
+                    <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
                       <p className="font-bold text-[#144AE0] dark:text-[#A6D6FE] mb-1">{inq.subject}</p>
                       <p>{inq.message}</p>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-blue-950">
-                      <div className="flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-100 dark:border-blue-950">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                         <button
                           onClick={() => handleUpdateInquiryStatus(inq.id, 'new')}
-                          className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                          className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-semibold cursor-pointer ${
                             inq.status === 'new' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
                           }`}
                         >
@@ -1871,7 +2316,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                         <button
                           onClick={() => handleUpdateInquiryStatus(inq.id, 'contacted')}
-                          className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                          className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-semibold cursor-pointer ${
                             inq.status === 'contacted' ? 'bg-[#144AE0] text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
                           }`}
                         >
@@ -1879,7 +2324,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                         <button
                           onClick={() => handleUpdateInquiryStatus(inq.id, 'resolved')}
-                          className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                          className={`px-3 py-1.5 min-h-[38px] rounded-lg text-xs font-semibold cursor-pointer ${
                             inq.status === 'resolved' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
                           }`}
                         >
@@ -1889,7 +2334,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       <a
                         href={`tel:${inq.phone}`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors"
+                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors"
                       >
                         <Phone className="w-3.5 h-3.5" />
                         <span>{isRtl ? 'تماس تلفنی' : 'Call'}</span>
@@ -2024,8 +2469,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     />
                   </div>
 
-                  <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto">
-                    {(['all', 'active', 'installment', 'featured'] as const).map((statusKey) => (
+                  <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto no-scrollbar">
+                    {(['all', 'active', 'hidden', 'installment', 'featured'] as const).map((statusKey) => (
                       <button
                         key={statusKey}
                         onClick={() => setCatalogStatusFilter(statusKey)}
@@ -2039,6 +2484,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           ? isRtl ? 'همه' : 'All'
                           : statusKey === 'active'
                           ? isRtl ? 'فعال' : 'Active'
+                          : statusKey === 'hidden'
+                          ? isRtl ? 'مخفی' : 'Hidden'
                           : statusKey === 'installment'
                           ? isRtl ? 'اقساطی' : 'Installment'
                           : isRtl ? 'پوستر' : 'Poster'}
@@ -2071,7 +2518,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Filtered Products */}
+              {/* Filtered Products + Batch Selection Bar */}
               {(() => {
                 const searchLower = catalogSearch.toLowerCase().trim();
                 const filtered = products.filter((prod) => {
@@ -2080,15 +2527,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     prod.titleFa.toLowerCase().includes(searchLower) ||
                     prod.titleEn.toLowerCase().includes(searchLower) ||
                     prod.brand.toLowerCase().includes(searchLower) ||
-                    prod.model.toLowerCase().includes(searchLower);
+                    prod.model.toLowerCase().includes(searchLower) ||
+                    (prod.tags || []).some((tag) => tag.toLowerCase().includes(searchLower));
                   const matchesCategory = catalogCategoryFilter === 'all' || prod.category === catalogCategoryFilter;
                   const matchesStatus =
                     catalogStatusFilter === 'all' ||
                     (catalogStatusFilter === 'active' && prod.isActive !== false) ||
+                    (catalogStatusFilter === 'hidden' && prod.isActive === false) ||
                     (catalogStatusFilter === 'installment' && prod.installmentAvailable) ||
                     (catalogStatusFilter === 'featured' && prod.featuredPoster);
                   return matchesSearch && matchesCategory && matchesStatus;
                 });
+
+                const filteredIds = filtered.map((p) => p.id);
+                const allFilteredSelected =
+                  filteredIds.length > 0 && filteredIds.every((id) => selectedProductIds.includes(id));
+
+                const quickProductTags = isRtl
+                  ? ['پرفروش', 'اقساط ویژه', 'نصب رایگان', 'گارانتی رسمی', 'ارسال فوری', 'اورهال‌شده']
+                  : ['Best Seller', 'Special Terms', 'Free Setup', 'Official Warranty', 'Fast Delivery', 'Rebuilt'];
 
                 if (filtered.length === 0) {
                   return (
@@ -2102,127 +2559,396 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 }
 
                 return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {filtered.map((prod) => {
-                      const isActive = prod.isActive !== false;
-                      const isFeatured = !!prod.featuredPoster;
-                      const precision = prod.precisionRating ?? 98;
-                      const durability = prod.durabilityRating ?? 97;
-                      const efficiency = prod.efficiencyRating ?? 95;
+                  <div className="space-y-4">
+                    {/* Selection Bar */}
+                    <div className={`${cardClass} px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSelectAllProducts(filteredIds)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-xl bg-slate-100 hover:bg-blue-50 dark:bg-[#060F26] dark:hover:bg-blue-950 border border-slate-200 dark:border-blue-800 text-xs font-bold text-[#091A42] dark:text-white cursor-pointer"
+                        >
+                          {allFilteredSelected ? (
+                            <CheckSquare className="w-4 h-4 text-[#FD5202]" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-400" />
+                          )}
+                          <span>
+                            {allFilteredSelected
+                              ? isRtl ? 'لغو انتخاب لیست فعلی' : 'Deselect Visible'
+                              : isRtl ? `انتخاب همه (${filtered.length})` : `Select All (${filtered.length})`}
+                          </span>
+                        </button>
 
-                      return (
-                        <div key={prod.id} className={`${cardClass} p-5 space-y-4`}>
-                          <div className="flex items-start gap-4">
-                            <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 shrink-0 border border-slate-200 dark:border-blue-900/40">
-                              <img src={prod.image} alt={prod.titleFa} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                              <span
-                                className={`absolute top-1.5 rtl:right-1.5 ltr:left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                  isActive ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-200'
-                                }`}
-                              >
-                                {isActive ? (isRtl ? 'فعال' : 'Active') : (isRtl ? 'مخفی' : 'Draft')}
-                              </span>
-                            </div>
+                        {selectedProductIds.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProductIds([])}
+                            className="flex items-center gap-1 px-2.5 py-1.5 min-h-[38px] rounded-xl bg-slate-100 dark:bg-slate-900 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-rose-500 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>{isRtl ? 'پاک کردن انتخاب' : 'Clear'}</span>
+                          </button>
+                        )}
+                      </div>
 
-                            <div className="flex-1 space-y-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[11px] font-bold text-[#144AE0] dark:text-[#A6D6FE] bg-blue-50 dark:bg-blue-950 px-2 py-0.5 rounded">
-                                  {isRtl ? prod.categoryFa : prod.categoryEn}
-                                </span>
-                                <span className="text-xs font-mono font-bold text-[#091A42] dark:text-white bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
-                                  {prod.model}
-                                </span>
-                              </div>
-                              <h4 className="font-bold text-sm text-[#091A42] dark:text-white truncate">
-                                {isRtl ? prod.titleFa : prod.titleEn}
-                              </h4>
-                              <p className="text-xs text-slate-500 dark:text-slate-300">{prod.brand}</p>
-                              <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 pt-0.5">
-                                {isRtl ? prod.priceFa : prod.priceEn}
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-500 dark:text-slate-400 tabular-nums">
+                          {isRtl ? `${filtered.length} دستگاه نمایش داده شده` : `${filtered.length} showing`}
+                        </span>
+                        {selectedProductIds.length > 0 && (
+                          <span className="px-2.5 py-1 rounded-full bg-[#FD5202] text-white font-bold tabular-nums">
+                            {isRtl ? `${selectedProductIds.length} مورد انتخاب‌شده` : `${selectedProductIds.length} selected`}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Sticky Bulk Action Toolbar */}
+                    {selectedProductIds.length > 0 && (
+                      <div className="sticky top-2 z-20 rounded-2xl bg-[#091A42] dark:bg-[#0D2150] text-white border border-blue-500/40 shadow-xl p-3.5 sm:p-4 space-y-3">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="w-7 h-7 rounded-lg bg-[#FD5202] flex items-center justify-center font-mono text-xs font-extrabold tabular-nums shrink-0">
+                              {selectedProductIds.length}
+                            </span>
+                            <div>
+                              <p className="text-xs sm:text-sm font-extrabold">
+                                {isRtl ? 'عملیات گروهی روی دستگاه‌های انتخاب‌شده' : 'Bulk Actions on Selected Machines'}
+                              </p>
+                              <p className="text-[11px] text-[#A6D6FE]">
+                                {isRtl
+                                  ? 'تغییر وضعیت نمایش، برچسب‌گذاری یا حذف یکجای موارد انتخاب‌شده'
+                                  : 'Update visibility, apply tags, or delete selected items in one batch'}
                               </p>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-blue-950 text-[10px] tabular-nums">
-                            <div className="space-y-1">
-                              <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                <span>{isRtl ? 'دقت' : 'Precision'}</span>
-                                <span className="font-mono font-bold text-[#144AE0] dark:text-[#A6D6FE]">{precision}%</span>
-                              </div>
-                              <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden">
-                                <div className="h-full bg-[#144AE0] rounded-full" style={{ width: `${precision}%` }} />
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                <span>{isRtl ? 'استقامت' : 'Durability'}</span>
-                                <span className="font-mono font-bold text-[#FD5202]">{durability}%</span>
-                              </div>
-                              <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden">
-                                <div className="h-full bg-[#FD5202] rounded-full" style={{ width: `${durability}%` }} />
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                <span>{isRtl ? 'راندمان' : 'Efficiency'}</span>
-                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{efficiency}%</span>
-                              </div>
-                              <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${efficiency}%` }} />
-                              </div>
-                            </div>
-                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleBulkProductVisibility(true)}
+                              className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{isRtl ? 'نمایش در سایت' : 'Show'}</span>
+                            </button>
 
-                          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-blue-950 gap-2 flex-wrap">
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                onClick={() => handleToggleProductActive(prod.id)}
-                                className="px-2 py-1 text-xs rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 flex items-center gap-1 cursor-pointer"
-                              >
-                                {isActive ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" />}
-                                <span className="text-[11px]">{isActive ? (isRtl ? 'فعال' : 'Active') : (isRtl ? 'مخفی' : 'Hidden')}</span>
-                              </button>
-                              <button
-                                onClick={() => handleToggleProductFeatured(prod.id)}
-                                className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 cursor-pointer ${
-                                  isFeatured
-                                    ? 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                    : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
-                                }`}
-                              >
-                                <Star className={`w-3.5 h-3.5 ${isFeatured ? 'fill-amber-400 text-amber-400' : ''}`} />
-                                <span className="text-[11px]">{isRtl ? 'پوستر' : 'Poster'}</span>
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleBulkProductVisibility(false)}
+                              className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold cursor-pointer"
+                            >
+                              <EyeOff className="w-3.5 h-3.5" />
+                              <span>{isRtl ? 'مخفی‌سازی' : 'Hide'}</span>
+                            </button>
 
-                            <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setShowProductBulkTagPanel((v) => !v)}
+                              className={`flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl text-xs font-bold cursor-pointer border ${
+                                showProductBulkTagPanel
+                                  ? 'bg-[#144AE0] border-blue-400 text-white'
+                                  : 'bg-white/10 hover:bg-white/20 border-white/15 text-white'
+                              }`}
+                            >
+                              <Tag className="w-3.5 h-3.5 text-[#FD5202]" />
+                              <span>{isRtl ? 'برچسب‌گذاری گروهی' : 'Bulk Tag'}</span>
+                            </button>
+
+                            {!confirmBulkDeleteProducts ? (
                               <button
-                                onClick={() => handleDuplicateProduct(prod)}
-                                className="px-2.5 py-1 text-xs rounded-lg bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                                type="button"
+                                onClick={() => setConfirmBulkDeleteProducts(true)}
+                                className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold cursor-pointer"
                               >
-                                <Copy className="w-3 h-3" />
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>{isRtl ? 'حذف گروهی' : 'Delete'}</span>
                               </button>
-                              <button
-                                onClick={() => {
-                                  setEditingProduct(prod);
-                                  setIsAddingProduct(false);
-                                }}
-                                className="flex items-center gap-1 px-3 py-1 text-xs rounded-lg bg-[#144AE0] hover:bg-blue-700 text-white font-semibold cursor-pointer"
-                              >
-                                <Edit2 className="w-3 h-3" />
-                                <span>{t.edit}</span>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteProduct(prod.id)}
-                                className="px-2.5 py-1 text-xs rounded-lg bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300 cursor-pointer"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-500/60 px-2.5 py-1 rounded-xl">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                                <button
+                                  type="button"
+                                  onClick={handleBulkDeleteProducts}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold cursor-pointer"
+                                >
+                                  {isRtl ? `تایید حذف (${selectedProductIds.length})` : `Confirm (${selectedProductIds.length})`}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmBulkDeleteProducts(false)}
+                                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs cursor-pointer"
+                                >
+                                  {isRtl ? 'انصراف' : 'Cancel'}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      );
-                    })}
+
+                        {/* Expandable Bulk Tag Panel */}
+                        {showProductBulkTagPanel && (
+                          <div className="pt-3 border-t border-white/15 space-y-3 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5">
+                                {(['add', 'remove', 'clear'] as const).map((mode) => (
+                                  <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => setProductBulkTagMode(mode)}
+                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${
+                                      productBulkTagMode === mode
+                                        ? 'bg-[#FD5202] text-white'
+                                        : 'bg-white/10 text-slate-200 hover:bg-white/15'
+                                    }`}
+                                  >
+                                    {mode === 'add'
+                                      ? isRtl ? 'افزودن برچسب' : 'Add Tags'
+                                      : mode === 'remove'
+                                      ? isRtl ? 'حذف برچسب مشخص' : 'Remove Tag(s)'
+                                      : isRtl ? 'پاک‌سازی همه برچسب‌ها' : 'Clear All Tags'}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <span className="text-[11px] text-[#A6D6FE]">
+                                {isRtl ? 'برچسب‌های متعدد را با ویرگول (،) جدا کنید' : 'Separate multiple tags with commas'}
+                              </span>
+                            </div>
+
+                            {productBulkTagMode !== 'clear' && (
+                              <>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-[11px] text-slate-300 font-semibold">
+                                    {isRtl ? 'برچسب‌های پیشنهادی:' : 'Quick presets:'}
+                                  </span>
+                                  {quickProductTags.map((preset) => (
+                                    <button
+                                      key={preset}
+                                      type="button"
+                                      onClick={() => handleBulkTagProducts([preset])}
+                                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-[#144AE0] text-[11px] font-semibold border border-white/15 cursor-pointer transition-colors"
+                                    >
+                                      {productBulkTagMode === 'remove' ? '−' : '+'} {preset}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <input
+                                    type="text"
+                                    value={productBulkTagInput}
+                                    onChange={(e) => setProductBulkTagInput(e.target.value)}
+                                    placeholder={isRtl ? 'مثلاً: پرفروش، اقساط ویژه...' : 'e.g. Best Seller, Featured...'}
+                                    className="sm:col-span-1 bg-[#060F26] border border-blue-700/70 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:border-[#FD5202] focus:outline-none"
+                                  />
+                                  {productBulkTagMode === 'add' && (
+                                    <>
+                                      <input
+                                        type="text"
+                                        value={productBulkBadgeFa}
+                                        onChange={(e) => setProductBulkBadgeFa(e.target.value)}
+                                        placeholder={isRtl ? 'نشان کارت فارسی (اختیاری)' : 'Badge Fa (optional)'}
+                                        className="bg-[#060F26] border border-blue-700/70 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:border-[#FD5202] focus:outline-none"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={productBulkBadgeEn}
+                                        onChange={(e) => setProductBulkBadgeEn(e.target.value)}
+                                        placeholder={isRtl ? 'Badge English (اختیاری)' : 'Card Badge En (optional)'}
+                                        className="bg-[#060F26] border border-blue-700/70 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:border-[#FD5202] focus:outline-none"
+                                        dir="ltr"
+                                      />
+                                    </>
+                                  )}
+                                </div>
+                              </>
+                            )}
+
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleBulkTagProducts()}
+                                className="flex items-center gap-1.5 px-4 py-2 min-h-[38px] rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold cursor-pointer"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>
+                                  {productBulkTagMode === 'clear'
+                                    ? isRtl ? 'پاک کردن همه برچسب‌های انتخاب‌شده' : 'Clear Tags on Selected'
+                                    : productBulkTagMode === 'remove'
+                                    ? isRtl ? 'حذف برچسب‌های واردشده' : 'Remove Entered Tags'
+                                    : isRtl ? 'اعمال برچسب و نشان روی موارد انتخاب‌شده' : 'Apply Tags to Selected'}
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {filtered.map((prod) => {
+                        const isActive = prod.isActive !== false;
+                        const isFeatured = !!prod.featuredPoster;
+                        const isSelected = selectedProductIds.includes(prod.id);
+                        const precision = prod.precisionRating ?? 98;
+                        const durability = prod.durabilityRating ?? 97;
+                        const efficiency = prod.efficiencyRating ?? 95;
+
+                        return (
+                          <div
+                            key={prod.id}
+                            className={`${cardClass} p-4 sm:p-5 space-y-4 transition-all ${
+                              isSelected
+                                ? 'ring-2 ring-[#FD5202] border-[#FD5202] bg-orange-50/30 dark:bg-[#0D2150]'
+                                : ''
+                            }`}
+                          >
+                            <div className="flex items-start gap-3 sm:gap-4">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleSelectProduct(prod.id)}
+                                aria-pressed={isSelected}
+                                title={isRtl ? 'انتخاب دستگاه برای عملیات گروهی' : 'Select machine for batch action'}
+                                className={`mt-1 w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-[#FD5202] border-[#FD5202] text-white'
+                                    : 'bg-slate-50 dark:bg-[#060F26] border-slate-300 dark:border-blue-800 text-slate-400 hover:border-[#FD5202]'
+                                }`}
+                              >
+                                {isSelected ? <Check className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                              </button>
+
+                              <div className="relative w-20 h-20 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 shrink-0 border border-slate-200 dark:border-blue-900/40">
+                                <img src={prod.image} alt={prod.titleFa} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <span
+                                  className={`absolute top-1.5 rtl:right-1.5 ltr:left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                    isActive ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-200'
+                                  }`}
+                                >
+                                  {isActive ? (isRtl ? 'فعال' : 'Active') : (isRtl ? 'مخفی' : 'Hidden')}
+                                </span>
+                              </div>
+
+                              <div className="flex-1 space-y-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[11px] font-bold text-[#144AE0] dark:text-[#A6D6FE] bg-blue-50 dark:bg-blue-950 px-2 py-0.5 rounded">
+                                    {isRtl ? prod.categoryFa : prod.categoryEn}
+                                  </span>
+                                  <span className="text-xs font-mono font-bold text-[#091A42] dark:text-white bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                                    {prod.model}
+                                  </span>
+                                  {(isRtl ? prod.badgeFa : prod.badgeEn) && (
+                                    <span className="text-[10px] font-bold text-[#FD5202] bg-orange-50 dark:bg-orange-950/60 px-2 py-0.5 rounded border border-orange-200 dark:border-orange-900/50">
+                                      {isRtl ? prod.badgeFa : prod.badgeEn}
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="font-bold text-sm text-[#091A42] dark:text-white truncate">
+                                  {isRtl ? prod.titleFa : prod.titleEn}
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-300">{prod.brand}</p>
+                                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 pt-0.5">
+                                  {isRtl ? prod.priceFa : prod.priceEn}
+                                </p>
+
+                                {prod.tags && prod.tags.length > 0 && (
+                                  <div className="flex flex-wrap items-center gap-1 pt-1">
+                                    {prod.tags.map((tag) => (
+                                      <span
+                                        key={tag}
+                                        className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/70 border border-blue-200/70 dark:border-blue-800 text-[10px] font-semibold text-[#144AE0] dark:text-[#A6D6FE]"
+                                      >
+                                        #{tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-blue-950 text-[10px] tabular-nums">
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                                  <span>{isRtl ? 'دقت' : 'Precision'}</span>
+                                  <span className="font-mono font-bold text-[#144AE0] dark:text-[#A6D6FE]">{precision}%</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden">
+                                  <div className="h-full bg-[#144AE0] rounded-full" style={{ width: `${precision}%` }} />
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                                  <span>{isRtl ? 'استقامت' : 'Durability'}</span>
+                                  <span className="font-mono font-bold text-[#FD5202]">{durability}%</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden">
+                                  <div className="h-full bg-[#FD5202] rounded-full" style={{ width: `${durability}%` }} />
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                                  <span>{isRtl ? 'راندمان' : 'Efficiency'}</span>
+                                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{efficiency}%</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden">
+                                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${efficiency}%` }} />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-blue-950 gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleToggleProductActive(prod.id)}
+                                  className="px-2 py-1 text-xs rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 flex items-center gap-1 cursor-pointer"
+                                >
+                                  {isActive ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" />}
+                                  <span className="text-[11px]">{isActive ? (isRtl ? 'فعال' : 'Active') : (isRtl ? 'مخفی' : 'Hidden')}</span>
+                                </button>
+                                <button
+                                  onClick={() => handleToggleProductFeatured(prod.id)}
+                                  className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 cursor-pointer ${
+                                    isFeatured
+                                      ? 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                      : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                                  }`}
+                                >
+                                  <Star className={`w-3.5 h-3.5 ${isFeatured ? 'fill-amber-400 text-amber-400' : ''}`} />
+                                  <span className="text-[11px]">{isRtl ? 'پوستر' : 'Poster'}</span>
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleDuplicateProduct(prod)}
+                                  className="px-2.5 py-1 text-xs rounded-lg bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingProduct(prod);
+                                    setIsAddingProduct(false);
+                                  }}
+                                  className="flex items-center gap-1 px-3 py-1 text-xs rounded-lg bg-[#144AE0] hover:bg-blue-700 text-white font-semibold cursor-pointer"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                  <span>{t.edit}</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteProduct(prod.id)}
+                                  className="px-2.5 py-1 text-xs rounded-lg bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })()}
@@ -2230,90 +2956,453 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* TAB 7: MEDIA & ARTICLES */}
-          {activeTab === 'media' && (
-            <div className="space-y-6 max-w-6xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabMedia}</h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {isRtl ? 'انتشار مقالات فنی، اخبار رویدادها و پروژه‌های صنعتی به دو زبان' : 'Publish bilingual technical guides, exhibition news, and project stories'}
-                  </p>
+          {activeTab === 'media' && (() => {
+            const mediaSearchLower = mediaSearch.toLowerCase().trim();
+            const filteredMedia = mediaItems.filter((item) => {
+              const matchesSearch =
+                !mediaSearchLower ||
+                item.titleFa.toLowerCase().includes(mediaSearchLower) ||
+                item.titleEn.toLowerCase().includes(mediaSearchLower) ||
+                item.summaryFa.toLowerCase().includes(mediaSearchLower) ||
+                item.summaryEn.toLowerCase().includes(mediaSearchLower) ||
+                (item.tags || []).some((tag) => tag.toLowerCase().includes(mediaSearchLower));
+              const matchesType = mediaTypeFilter === 'all' || item.type === mediaTypeFilter;
+              const isItemVisible = item.isActive !== false;
+              const matchesVis =
+                mediaVisibilityFilter === 'all' ||
+                (mediaVisibilityFilter === 'active' && isItemVisible) ||
+                (mediaVisibilityFilter === 'hidden' && !isItemVisible);
+              return matchesSearch && matchesType && matchesVis;
+            });
+
+            const filteredMediaIds = filteredMedia.map((m) => m.id);
+            const allFilteredMediaSelected =
+              filteredMediaIds.length > 0 && filteredMediaIds.every((id) => selectedMediaIds.includes(id));
+
+            const quickMediaTags = isRtl
+              ? ['مقاله فنی', 'نگهداری و سرویس', 'اخبار پایون', 'پروژه کارگاهی', 'آموزش اپراتور']
+              : ['Technical Guide', 'Maintenance', 'Payon News', 'Case Study', 'Operator Training'];
+
+            return (
+              <div className="space-y-6 max-w-6xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabMedia}</h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {isRtl ? 'انتشار مقالات فنی، اخبار رویدادها و پروژه‌های صنعتی به دو زبان' : 'Publish bilingual technical guides, exhibition news, and project stories'}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setEditingMedia({
+                        id: `post-${Date.now()}`,
+                        type: 'article',
+                        typeFa: 'مقاله فنی',
+                        typeEn: 'Technical Guide',
+                        titleFa: '',
+                        titleEn: '',
+                        dateFa: 'امروز',
+                        dateEn: 'Today',
+                        readTimeFa: '۴ دقیقه',
+                        readTimeEn: '4 min read',
+                        summaryFa: '',
+                        summaryEn: '',
+                        contentFa: '',
+                        contentEn: '',
+                        image: '/assets/aistudio/04_saw_blade_hero_crop_dffed999.jpg',
+                        authorFa: 'تیم فنی آرسی',
+                        authorEn: 'RCG Technical Team',
+                        isActive: true,
+                        tags: [],
+                      });
+                      setIsAddingMedia(true);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 min-h-[40px] text-xs font-bold rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white shadow-sm transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{t.addNew}</span>
+                  </button>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setEditingMedia({
-                      id: `post-${Date.now()}`,
-                      type: 'article',
-                      typeFa: 'مقاله فنی',
-                      typeEn: 'Technical Guide',
-                      titleFa: '',
-                      titleEn: '',
-                      dateFa: 'امروز',
-                      dateEn: 'Today',
-                      readTimeFa: '۴ دقیقه',
-                      readTimeEn: '4 min read',
-                      summaryFa: '',
-                      summaryEn: '',
-                      contentFa: '',
-                      contentEn: '',
-                      image: '/assets/aistudio/04_saw_blade_hero_crop_dffed999.jpg',
-                      authorFa: 'تیم فنی آرسی',
-                      authorEn: 'RCG Technical Team',
-                    });
-                    setIsAddingMedia(true);
-                  }}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white shadow-sm transition-all cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>{t.addNew}</span>
-                </button>
-              </div>
+                {/* Search & Filters */}
+                <div className={`${cardClass} p-4 space-y-3`}>
+                  <div className="flex flex-col md:flex-row items-center gap-3">
+                    <div className="relative flex-1 w-full">
+                      <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 rtl:right-3 ltr:left-3 text-slate-400" />
+                      <input
+                        type="text"
+                        value={mediaSearch}
+                        onChange={(e) => setMediaSearch(e.target.value)}
+                        placeholder={isRtl ? 'جستجوی عنوان، خلاصه یا برچسب مطلب...' : 'Search by title, summary, or tag...'}
+                        className="w-full bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/80 rounded-xl rtl:pr-9 ltr:pl-9 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:border-[#FD5202] focus:outline-none"
+                      />
+                    </div>
 
-              <div className="space-y-4">
-                {mediaItems.map((item) => (
-                  <div key={item.id} className={`${cardClass} p-4 flex items-start gap-4`}>
-                    <img
-                      src={item.image}
-                      alt={item.titleFa}
-                      className="w-24 h-20 object-cover rounded-xl bg-slate-100 dark:bg-slate-900 shrink-0"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold text-[#FD5202] bg-orange-50 dark:bg-orange-950/60 px-2 py-0.5 rounded">
-                          {isRtl ? item.typeFa : item.typeEn}
-                        </span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">{isRtl ? item.dateFa : item.dateEn}</span>
-                      </div>
-                      <h4 className="font-bold text-sm text-[#091A42] dark:text-white">{isRtl ? item.titleFa : item.titleEn}</h4>
-                      <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-1">{isRtl ? item.summaryFa : item.summaryEn}</p>
-
-                      <div className="flex items-center gap-2 pt-2">
+                    <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto no-scrollbar">
+                      {(['all', 'active', 'hidden'] as const).map((visKey) => (
                         <button
-                          onClick={() => {
-                            setEditingMedia(item);
-                            setIsAddingMedia(false);
-                          }}
-                          className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-blue-950 dark:hover:bg-blue-900 border border-slate-200 dark:border-blue-800 text-slate-700 dark:text-slate-200 cursor-pointer"
+                          key={visKey}
+                          type="button"
+                          onClick={() => setMediaVisibilityFilter(visKey)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer ${
+                            mediaVisibilityFilter === visKey
+                              ? 'bg-[#144AE0] text-white'
+                              : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                          }`}
                         >
-                          <Edit2 className="w-3 h-3" />
-                          <span>{t.edit}</span>
+                          {visKey === 'all'
+                            ? isRtl ? 'همه وضعیت‌ها' : 'All Status'
+                            : visKey === 'active'
+                            ? isRtl ? 'منتشر شده' : 'Published'
+                            : isRtl ? 'مخفی' : 'Hidden'}
                         </button>
-                        <button
-                          onClick={() => handleDeleteMedia(item.id)}
-                          className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-rose-50 hover:bg-rose-600 hover:text-white dark:bg-rose-950/70 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300 cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>{t.delete}</span>
-                        </button>
-                      </div>
+                      ))}
                     </div>
                   </div>
-                ))}
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                    {[
+                      { id: 'all', label: isRtl ? 'همه مطالب' : 'All Types' },
+                      { id: 'article', label: isRtl ? 'مقاله فنی' : 'Articles' },
+                      { id: 'news', label: isRtl ? 'اخبار' : 'News' },
+                      { id: 'project', label: isRtl ? 'پروژه‌ها' : 'Projects' },
+                    ].map((mt) => (
+                      <button
+                        key={mt.id}
+                        type="button"
+                        onClick={() => setMediaTypeFilter(mt.id as 'all' | MediaItem['type'])}
+                        className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap cursor-pointer ${
+                          mediaTypeFilter === mt.id
+                            ? 'bg-[#091A42] dark:bg-blue-600 text-white font-bold'
+                            : 'bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {mt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Selection Bar */}
+                {filteredMedia.length > 0 && (
+                  <div className={`${cardClass} px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSelectAllMedia(filteredMediaIds)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-xl bg-slate-100 hover:bg-blue-50 dark:bg-[#060F26] dark:hover:bg-blue-950 border border-slate-200 dark:border-blue-800 text-xs font-bold text-[#091A42] dark:text-white cursor-pointer"
+                      >
+                        {allFilteredMediaSelected ? (
+                          <CheckSquare className="w-4 h-4 text-[#FD5202]" />
+                        ) : (
+                          <Square className="w-4 h-4 text-slate-400" />
+                        )}
+                        <span>
+                          {allFilteredMediaSelected
+                            ? isRtl ? 'لغو انتخاب لیست فعلی' : 'Deselect Visible'
+                            : isRtl ? `انتخاب همه (${filteredMedia.length})` : `Select All (${filteredMedia.length})`}
+                        </span>
+                      </button>
+
+                      {selectedMediaIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMediaIds([])}
+                          className="flex items-center gap-1 px-2.5 py-1.5 min-h-[38px] rounded-xl bg-slate-100 dark:bg-slate-900 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-rose-500 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'پاک کردن انتخاب' : 'Clear'}</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-500 dark:text-slate-400 tabular-nums">
+                        {isRtl ? `${filteredMedia.length} مطلب` : `${filteredMedia.length} items`}
+                      </span>
+                      {selectedMediaIds.length > 0 && (
+                        <span className="px-2.5 py-1 rounded-full bg-[#FD5202] text-white font-bold tabular-nums">
+                          {isRtl ? `${selectedMediaIds.length} مورد انتخاب‌شده` : `${selectedMediaIds.length} selected`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sticky Bulk Action Toolbar for Media */}
+                {selectedMediaIds.length > 0 && (
+                  <div className="sticky top-2 z-20 rounded-2xl bg-[#091A42] dark:bg-[#0D2150] text-white border border-blue-500/40 shadow-xl p-3.5 sm:p-4 space-y-3">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-[#FD5202] flex items-center justify-center font-mono text-xs font-extrabold tabular-nums shrink-0">
+                          {selectedMediaIds.length}
+                        </span>
+                        <div>
+                          <p className="text-xs sm:text-sm font-extrabold">
+                            {isRtl ? 'عملیات گروهی روی مطالب و رسانه‌ها' : 'Bulk Actions on Selected Media'}
+                          </p>
+                          <p className="text-[11px] text-[#A6D6FE]">
+                            {isRtl
+                              ? 'تغییر وضعیت انتشار، برچسب‌گذاری یا حذف گروهی موارد انتخاب‌شده'
+                              : 'Publish/hide, apply tags, or delete selected media items in batch'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleBulkMediaVisibility(true)}
+                          className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'انتشار / نمایش' : 'Publish'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleBulkMediaVisibility(false)}
+                          className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold cursor-pointer"
+                        >
+                          <EyeOff className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'عدم نمایش (مخفی)' : 'Hide'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowMediaBulkTagPanel((v) => !v)}
+                          className={`flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl text-xs font-bold cursor-pointer border ${
+                            showMediaBulkTagPanel
+                              ? 'bg-[#144AE0] border-blue-400 text-white'
+                              : 'bg-white/10 hover:bg-white/20 border-white/15 text-white'
+                          }`}
+                        >
+                          <Tag className="w-3.5 h-3.5 text-[#FD5202]" />
+                          <span>{isRtl ? 'برچسب‌گذاری گروهی' : 'Bulk Tag'}</span>
+                        </button>
+
+                        {!confirmBulkDeleteMedia ? (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmBulkDeleteMedia(true)}
+                            className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>{isRtl ? 'حذف گروهی' : 'Delete'}</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-500/60 px-2.5 py-1 rounded-xl">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                            <button
+                              type="button"
+                              onClick={handleBulkDeleteMedia}
+                              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold cursor-pointer"
+                            >
+                              {isRtl ? `تایید حذف (${selectedMediaIds.length})` : `Confirm (${selectedMediaIds.length})`}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmBulkDeleteMedia(false)}
+                              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs cursor-pointer"
+                            >
+                              {isRtl ? 'انصراف' : 'Cancel'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {showMediaBulkTagPanel && (
+                      <div className="pt-3 border-t border-white/15 space-y-3 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            {(['add', 'remove', 'clear'] as const).map((mode) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => setMediaBulkTagMode(mode)}
+                                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${
+                                  mediaBulkTagMode === mode
+                                    ? 'bg-[#FD5202] text-white'
+                                    : 'bg-white/10 text-slate-200 hover:bg-white/15'
+                                }`}
+                              >
+                                {mode === 'add'
+                                  ? isRtl ? 'افزودن برچسب' : 'Add Tags'
+                                  : mode === 'remove'
+                                  ? isRtl ? 'حذف برچسب مشخص' : 'Remove Tag(s)'
+                                  : isRtl ? 'پاک‌سازی همه برچسب‌ها' : 'Clear All Tags'}
+                              </button>
+                            ))}
+                          </div>
+                          <span className="text-[11px] text-[#A6D6FE]">
+                            {isRtl ? 'برچسب‌های متعدد را با ویرگول (،) جدا کنید' : 'Separate multiple tags with commas'}
+                          </span>
+                        </div>
+
+                        {mediaBulkTagMode !== 'clear' && (
+                          <>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] text-slate-300 font-semibold">
+                                {isRtl ? 'برچسب‌های پیشنهادی:' : 'Quick presets:'}
+                              </span>
+                              {quickMediaTags.map((preset) => (
+                                <button
+                                  key={preset}
+                                  type="button"
+                                  onClick={() => handleBulkTagMedia([preset])}
+                                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-[#144AE0] text-[11px] font-semibold border border-white/15 cursor-pointer transition-colors"
+                                >
+                                  {mediaBulkTagMode === 'remove' ? '−' : '+'} {preset}
+                                </button>
+                              ))}
+                            </div>
+
+                            <input
+                              type="text"
+                              value={mediaBulkTagInput}
+                              onChange={(e) => setMediaBulkTagInput(e.target.value)}
+                              placeholder={isRtl ? 'مثلاً: راهنمای فنی، سرویس و نگهداری...' : 'e.g. Technical Guide, Maintenance...'}
+                              className="w-full bg-[#060F26] border border-blue-700/70 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:border-[#FD5202] focus:outline-none"
+                            />
+                          </>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleBulkTagMedia()}
+                            className="flex items-center gap-1.5 px-4 py-2 min-h-[38px] rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>
+                              {mediaBulkTagMode === 'clear'
+                                ? isRtl ? 'پاک کردن همه برچسب‌های انتخاب‌شده' : 'Clear Tags on Selected'
+                                : mediaBulkTagMode === 'remove'
+                                ? isRtl ? 'حذف برچسب‌های واردشده' : 'Remove Entered Tags'
+                                : isRtl ? 'اعمال برچسب روی مطالب انتخاب‌شده' : 'Apply Tags to Selected'}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {filteredMedia.length === 0 ? (
+                  <div className={`${cardClass} p-12 text-center space-y-3`}>
+                    <FileText className="w-10 h-10 mx-auto text-slate-400" />
+                    <p className="text-sm font-bold text-[#091A42] dark:text-white">
+                      {isRtl ? 'مطلبی با این فیلترها یافت نشد' : 'No media items matched your filters'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {filteredMedia.map((item) => {
+                      const isVisible = item.isActive !== false;
+                      const isSelected = selectedMediaIds.includes(item.id);
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`${cardClass} p-4 flex flex-col sm:flex-row items-start gap-3 sm:gap-4 transition-all ${
+                            isSelected
+                              ? 'ring-2 ring-[#FD5202] border-[#FD5202] bg-orange-50/30 dark:bg-[#0D2150]'
+                              : ''
+                          }`}
+                        >
+                          <div className="flex items-start gap-3 w-full sm:w-auto">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSelectMedia(item.id)}
+                              aria-pressed={isSelected}
+                              title={isRtl ? 'انتخاب مطلب برای عملیات گروهی' : 'Select media item for batch action'}
+                              className={`mt-1 w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#FD5202] border-[#FD5202] text-white'
+                                  : 'bg-slate-50 dark:bg-[#060F26] border-slate-300 dark:border-blue-800 text-slate-400 hover:border-[#FD5202]'
+                              }`}
+                            >
+                              {isSelected ? <Check className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                            </button>
+
+                            <div className="relative flex-1 sm:flex-none sm:w-28 h-36 sm:h-24 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-900 shrink-0 border border-slate-200 dark:border-blue-900/40">
+                              <img
+                                src={item.image}
+                                alt={item.titleFa}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                              <span
+                                className={`absolute top-1.5 rtl:right-1.5 ltr:left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                  isVisible ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-200'
+                                }`}
+                              >
+                                {isVisible ? (isRtl ? 'منتشر' : 'Live') : (isRtl ? 'مخفی' : 'Hidden')}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex-1 space-y-1.5 min-w-0 w-full">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-bold text-[#FD5202] bg-orange-50 dark:bg-orange-950/60 px-2 py-0.5 rounded">
+                                {isRtl ? item.typeFa : item.typeEn}
+                              </span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400">{isRtl ? item.dateFa : item.dateEn}</span>
+                            </div>
+                            <h4 className="font-bold text-sm text-[#091A42] dark:text-white">{isRtl ? item.titleFa : item.titleEn}</h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-1">{isRtl ? item.summaryFa : item.summaryEn}</p>
+
+                            {item.tags && item.tags.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                {item.tags.map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/70 border border-blue-200/70 dark:border-blue-800 text-[10px] font-semibold text-[#144AE0] dark:text-[#A6D6FE]"
+                                  >
+                                    #{tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleMediaActive(item.id)}
+                                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 cursor-pointer"
+                              >
+                                {isVisible ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" />}
+                                <span className="text-[11px]">{isVisible ? (isRtl ? 'نمایش' : 'Visible') : (isRtl ? 'مخفی' : 'Hidden')}</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingMedia(item);
+                                  setIsAddingMedia(false);
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-blue-950 dark:hover:bg-blue-900 border border-slate-200 dark:border-blue-800 text-slate-700 dark:text-slate-200 cursor-pointer"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>{t.edit}</span>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteMedia(item.id)}
+                                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-rose-50 hover:bg-rose-600 hover:text-white dark:bg-rose-950/70 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300 cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>{t.delete}</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 8: HERO CAROUSEL */}
           {activeTab === 'slides' && (
@@ -2519,27 +3608,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB 10: SITE SETTINGS & HEADER LOGO CUSTOMIZATION */}
           {activeTab === 'settings' && (
             <div className="space-y-6 max-w-4xl">
-              <div>
-                <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabSettings}</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {isRtl ? 'تنظیمات لوگوی هدر، رنگ‌بندی برند، شماره تماس‌ها، نشانی دوزبانه و لینک شبکه‌های اجتماعی' : 'Customize header logo, brand colors, contact info, and official social links'}
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabSettings}</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    {isRtl ? 'تنظیمات لوگوی هدر، تم کلیدها، رنگ‌بندی برند، شماره تماس‌ها و لینک‌های اجتماعی' : 'Customize header logo, button themes, brand colors, contact info & social links'}
+                  </p>
+                </div>
+
+                {onOpenUiThemePicker && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenUiThemePicker();
+                    }}
+                    className="rcg-btn-primary flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs font-bold shadow-md cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>{isRtl ? 'باز کردن استودیو تم کلیدها و رابط کاربری' : 'Open UI & Button Theme Studio'}</span>
+                  </button>
+                )}
               </div>
 
-              <form onSubmit={handleSaveSettings} className={`${cardClass} p-6 space-y-6`}>
+              <form onSubmit={handleSaveSettings} className={`${cardClass} p-4 sm:p-6 space-y-5 sm:space-y-6`}>
                 {/* Header Logo & Brand Customization Block */}
-                <div className="p-5 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/70 space-y-4">
+                <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/70 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h3 className="text-sm font-black text-[#091A42] dark:text-white flex items-center gap-2">
                       <Palette className="w-4 h-4 text-[#FD5202]" />
                       <span>{isRtl ? 'تنظیمات لوگوی هدر سایت و رنگ‌بندی برند' : 'Header Logo & Brand Styling'}</span>
                     </h3>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setLocalSettings({ ...localSettings, logoType: 'vector' })}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer border ${
+                        className={`px-3 py-1.5 min-h-[38px] rounded-xl text-xs font-bold cursor-pointer border ${
                           (localSettings.logoType || 'vector') === 'vector'
                             ? 'bg-[#144AE0] text-white border-[#144AE0]'
                             : 'bg-white dark:bg-[#091A42] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-blue-800'
@@ -2550,7 +3655,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => setLocalSettings({ ...localSettings, logoType: 'custom' })}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer border ${
+                        className={`px-3 py-1.5 min-h-[38px] rounded-xl text-xs font-bold cursor-pointer border ${
                           localSettings.logoType === 'custom'
                             ? 'bg-[#144AE0] text-white border-[#144AE0]'
                             : 'bg-white dark:bg-[#091A42] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-blue-800'
@@ -2563,7 +3668,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   {/* Dual Light & Dark Surface Live Preview Strip */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="p-4 rounded-xl bg-white border border-slate-200 text-slate-900 space-y-2">
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200 text-slate-900 space-y-2">
                       <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
                         <Sun className="w-3.5 h-3.5 text-amber-500" />
                         <span>{isRtl ? 'نمایش در تم روشن / کارت‌های سفید' : 'Light Mode / Surface'}</span>
@@ -2574,7 +3679,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         subtitleType={isRtl ? 'fa' : 'en'}
                       />
                     </div>
-                    <div className="p-4 rounded-xl bg-[#060F26] border border-blue-800 text-white space-y-2">
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-[#060F26] border border-blue-800 text-white space-y-2">
                       <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
                         <Moon className="w-3.5 h-3.5 text-[#A6D6FE]" />
                         <span>{isRtl ? 'نمایش در تم دارک / فوتر تیره' : 'Dark Mode / Footer BG'}</span>
@@ -2588,42 +3693,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
 
                   {/* Mode Switcher Tabs: Light vs Dark Logo Customization */}
-                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-blue-900/60 pb-2">
+                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-blue-900/60 pb-2">
                     <button
                       type="button"
                       onClick={() => setSettingsLogoMode('light')}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 min-h-[38px] rounded-xl text-xs font-bold border cursor-pointer ${
                         settingsLogoMode === 'light'
                           ? 'bg-amber-500 text-white border-amber-500'
                           : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-800'
                       }`}
                     >
-                      <Sun className="w-3.5 h-3.5" />
+                      <Sun className="w-3.5 h-3.5 shrink-0" />
                       <span>{isRtl ? 'تنظیمات پس‌زمینه روشن (Light)' : 'Light Theme / Surface'}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setSettingsLogoMode('dark')}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 min-h-[38px] rounded-xl text-xs font-bold border cursor-pointer ${
                         settingsLogoMode === 'dark'
                           ? 'bg-[#091A42] text-[#A6D6FE] border-blue-500'
                           : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-800'
                       }`}
                     >
-                      <Moon className="w-3.5 h-3.5" />
+                      <Moon className="w-3.5 h-3.5 shrink-0" />
                       <span>{isRtl ? 'تنظیمات پس‌زمینه تیره / دارک (Dark)' : 'Dark Theme / Footer BG'}</span>
                     </button>
                   </div>
 
                   {settingsLogoMode === 'light' ? (
                     localSettings.logoType === 'custom' ? (
-                      <div className="flex flex-col sm:flex-row items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="text"
                           value={localSettings.customLogoUrl || ''}
                           onChange={(e) => setLocalSettings({ ...localSettings, customLogoUrl: e.target.value })}
                           placeholder="آدرس لوگوی حالت روشن..."
-                          className={`${inputClass} flex-1 font-mono`}
+                          className={`${inputClass} w-full sm:flex-1 font-mono`}
                           dir="ltr"
                         />
                         <label className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer shrink-0">
@@ -2746,13 +3851,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     )
                   ) : localSettings.logoType === 'custom' ? (
-                    <div className="flex flex-col sm:flex-row items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input
                         type="text"
                         value={localSettings.customLogoDarkUrl || ''}
                         onChange={(e) => setLocalSettings({ ...localSettings, customLogoDarkUrl: e.target.value })}
                         placeholder="آدرس لوگوی حالت دارک / تیره..."
-                        className={`${inputClass} flex-1 font-mono`}
+                        className={`${inputClass} w-full sm:flex-1 font-mono`}
                         dir="ltr"
                       />
                       <label className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer shrink-0">
@@ -2789,7 +3894,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-[#091A42] text-white">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 sm:p-3.5 rounded-xl bg-[#091A42] text-white">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-200">
                           {isRtl ? 'رنگ اصلی (دارک)' : 'Primary (Dark)'}
@@ -3076,8 +4181,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Product Edit / Add Modal */}
       {editingProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md">
-          <div className="w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 max-h-[92vh] overflow-y-auto text-xs text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/75 backdrop-blur-md">
+          <div className="w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl p-4 sm:p-6 md:p-8 shadow-2xl space-y-5 max-h-[94dvh] overflow-y-auto text-xs text-slate-900 dark:text-white">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-blue-900/80 pb-4">
               <div className="flex items-center gap-2.5">
                 <span className="p-2 rounded-xl bg-[#FD5202] text-white">
@@ -3203,6 +4308,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className={`${inputClass} font-mono`}
                     />
                   </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-700 dark:text-slate-300 font-semibold">
+                    {isRtl ? 'برچسب‌ها (Tags - با ویرگول جدا کنید)' : 'Tags (comma-separated)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={(editingProduct.tags || []).join(', ')}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        tags: e.target.value
+                          .split(/[,\n،]+/)
+                          .map((s) => s.trim())
+                          .filter(Boolean)
+                          .slice(0, 12),
+                      })
+                    }
+                    placeholder={isRtl ? 'پرفروش، اقساط ویژه، گارانتی رسمی...' : 'Best Seller, Free Setup...'}
+                    className={inputClass}
+                  />
                 </div>
               </div>
 
@@ -3427,20 +4554,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200 dark:border-blue-900 flex justify-end gap-2.5">
+            <div className="pt-4 border-t border-slate-200 dark:border-blue-900 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => setEditingProduct(null)}
-                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-4 sm:px-5 py-2.5 min-h-[42px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer font-semibold"
               >
                 {isRtl ? 'انصراف' : 'Cancel'}
               </button>
               <button
                 type="button"
                 onClick={() => handleSaveProduct(editingProduct)}
-                className="flex items-center gap-1.5 px-7 py-2.5 rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white font-bold shadow-md cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-4 sm:px-7 py-2.5 min-h-[42px] rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white font-bold shadow-md cursor-pointer"
               >
-                <Save className="w-4 h-4" />
+                <Save className="w-4 h-4 shrink-0" />
                 <span>{isRtl ? 'ذخیره مشخصات دستگاه' : 'Save Machine'}</span>
               </button>
             </div>
@@ -3450,8 +4577,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Media Edit / Add Modal (Full Bilingual) */}
       {editingMedia && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto text-xs text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/75 backdrop-blur-sm">
+          <div className="w-full max-w-2xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 max-h-[94dvh] overflow-y-auto text-xs text-slate-900 dark:text-white">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-blue-900 pb-3">
               <h3 className="font-bold text-base text-[#091A42] dark:text-white">
                 {isAddingMedia ? (isRtl ? 'انتشار مطلب جدید' : 'New Article') : (isRtl ? 'ویرایش مطلب' : 'Edit Article')}
@@ -3608,20 +4735,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </button>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1">
+                  <label className="text-slate-700 dark:text-slate-300 font-semibold">
+                    {isRtl ? 'برچسب‌ها (Tags - با ویرگول جدا کنید)' : 'Tags (comma-separated)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={(editingMedia.tags || []).join(', ')}
+                    onChange={(e) =>
+                      setEditingMedia({
+                        ...editingMedia,
+                        tags: e.target.value
+                          .split(/[,\n،]+/)
+                          .map((s) => s.trim())
+                          .filter(Boolean)
+                          .slice(0, 12),
+                      })
+                    }
+                    placeholder={isRtl ? 'مقاله فنی، نگهداری، اخبار پایون...' : 'Technical Guide, Maintenance...'}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 px-3.5 py-2.5 min-h-[40px] w-full rounded-xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editingMedia.isActive !== false}
+                      onChange={(e) => setEditingMedia({ ...editingMedia, isActive: e.target.checked })}
+                      className="w-4 h-4 rounded accent-[#FD5202]"
+                    />
+                    <span className="font-semibold text-slate-800 dark:text-white">
+                      {isRtl ? 'مطلب در وب‌سایت نمایش داده شود (فعال)' : 'Visible & published on website'}
+                    </span>
+                  </label>
+                </div>
+              </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200 dark:border-blue-900 flex justify-end gap-2">
+            <div className="pt-4 border-t border-slate-200 dark:border-blue-900 grid grid-cols-2 sm:flex sm:justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setEditingMedia(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-4 py-2.5 min-h-[40px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer font-semibold"
               >
                 {isRtl ? 'انصراف' : 'Cancel'}
               </button>
               <button
                 type="button"
                 onClick={() => handleSaveMedia(editingMedia)}
-                className="px-6 py-2 rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white font-bold cursor-pointer"
+                className="px-4 sm:px-6 py-2.5 min-h-[40px] rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white font-bold cursor-pointer"
               >
                 {isRtl ? 'انتشار مطلب' : 'Publish Article'}
               </button>
@@ -3632,8 +4796,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Campaign Edit / Create Modal (Full Bilingual) */}
       {editingCampaign && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md">
-          <div className="w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto text-xs text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/75 backdrop-blur-md">
+          <div className="w-full max-w-3xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-3xl p-4 sm:p-6 md:p-8 shadow-2xl space-y-5 max-h-[94dvh] overflow-y-auto text-xs text-slate-900 dark:text-white">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-blue-900 pb-4">
               <div className="flex items-center gap-2.5">
                 <span className="p-2 rounded-xl bg-[#FD5202] text-white">
@@ -3819,20 +4983,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200 dark:border-blue-900 flex justify-end gap-2.5">
+            <div className="pt-4 border-t border-slate-200 dark:border-blue-900 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => setEditingCampaign(null)}
-                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-4 sm:px-5 py-2.5 min-h-[42px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer font-semibold"
               >
                 {isRtl ? 'انصراف' : 'Cancel'}
               </button>
               <button
                 type="button"
                 onClick={() => handleSaveCampaign(editingCampaign)}
-                className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white font-bold shadow-md cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-4 sm:px-6 py-2.5 min-h-[42px] rounded-xl bg-[#FD5202] hover:bg-[#E04600] text-white font-bold shadow-md cursor-pointer"
               >
-                <Save className="w-4 h-4" />
+                <Save className="w-4 h-4 shrink-0" />
                 <span>{isRtl ? 'ذخیره و انتشار کمپین' : 'Save Campaign'}</span>
               </button>
             </div>
@@ -3842,10 +5006,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Brand Asset Upload Modal (with real File Upload + Preview) */}
       {isAddingAsset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/75 backdrop-blur-sm">
           <form
             onSubmit={handleAddAssetSubmit}
-            className="w-full max-w-lg bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-2xl p-6 shadow-2xl space-y-4 text-xs text-slate-900 dark:text-white"
+            className="w-full max-w-lg bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-500/40 rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 max-h-[94dvh] overflow-y-auto text-xs text-slate-900 dark:text-white"
           >
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-blue-900 pb-3">
               <div className="flex items-center gap-2">
@@ -3958,17 +5122,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-200 dark:border-blue-900 flex justify-end gap-2">
+            <div className="pt-3 border-t border-slate-200 dark:border-blue-900 grid grid-cols-2 sm:flex sm:justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsAddingAsset(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-4 py-2.5 min-h-[40px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer font-semibold"
               >
                 {isRtl ? 'انصراف' : 'Cancel'}
               </button>
               <button
                 type="submit"
-                className="px-6 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white font-bold cursor-pointer"
+                className="px-4 sm:px-6 py-2.5 min-h-[40px] rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white font-bold cursor-pointer"
               >
                 {isRtl ? 'ذخیره در گالری' : 'Save Asset'}
               </button>

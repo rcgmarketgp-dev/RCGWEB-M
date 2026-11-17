@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { HeroSlide, Language, SectionCustomization } from '../types';
+import { HeroSlide, Language, SectionCustomization, SiteSettings } from '../types';
 import { translations } from '../utils/i18n';
 import { triggerCtaLink } from '../utils/ctaNavigation';
+import { useResponsiveLayoutRatios } from '../hooks/useResponsiveLayoutRatios';
+import { ExternalIconBadge } from './ExternalIconBadge';
 import { ArrowLeft, ArrowRight, ChevronRight, ChevronLeft } from 'lucide-react';
 import { ShieldCheck, Sparkle, Cpu, Users, Toolbox } from '@phosphor-icons/react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'motion/react';
@@ -9,6 +11,7 @@ import { motion, AnimatePresence, useScroll, useTransform } from 'motion/react';
 interface HeroProps {
   slides: HeroSlide[];
   language: Language;
+  settings?: SiteSettings;
   sectionConfig?: SectionCustomization;
   onExploreDepartments: () => void;
   onOpenCalculator: () => void;
@@ -18,6 +21,7 @@ interface HeroProps {
 export const Hero: React.FC<HeroProps> = ({
   slides,
   language,
+  settings,
   sectionConfig,
   onExploreDepartments,
   onOpenCalculator,
@@ -57,12 +61,13 @@ export const Hero: React.FC<HeroProps> = ({
   };
 
   const isRtl = language === 'fa';
+  const { hero: heroLayout } = useResponsiveLayoutRatios(language);
 
   return (
     <section
       ref={heroRef}
       id="hero"
-      className="relative overflow-hidden bg-gradient-to-b from-white via-slate-50 to-blue-50/40 dark:from-[#091A42] dark:via-[#060F26] dark:to-[#040A1A] text-slate-900 dark:text-white pt-10 pb-16 lg:py-20 border-b border-slate-200 dark:border-blue-900/40"
+      className={`relative overflow-hidden bg-gradient-to-b from-white via-slate-50 to-blue-50/40 dark:from-[#091A42] dark:via-[#060F26] dark:to-[#040A1A] text-slate-900 dark:text-white ${heroLayout.sectionPadding} border-b border-slate-200 dark:border-blue-900/40`}
     >
       {/* Parallax Backdrop Layer */}
       <motion.div
@@ -87,26 +92,26 @@ export const Hero: React.FC<HeroProps> = ({
       <div className="absolute top-12 right-1/4 w-96 h-96 bg-[#144AE0]/10 dark:bg-[#144AE0]/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-8 left-12 w-72 h-72 bg-[#FD5202]/10 dark:bg-[#FD5202]/15 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <div className={`max-w-7xl mx-auto ${heroLayout.containerPadding} relative z-10`}>
         {/* Main Hero Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-10 items-center">
+        <div className={`grid grid-cols-1 lg:grid-cols-12 ${heroLayout.gridGap} items-center`}>
           {/* Text Content Column */}
           <motion.div
             initial={{ opacity: 0, y: 28 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-            className="lg:col-span-7 flex flex-col justify-center space-y-6"
+            className={`lg:col-span-7 flex flex-col justify-center ${heroLayout.contentStackGap}`}
           >
             {/* Editorial Kicker */}
-            <div className="inline-flex items-center gap-2 self-start px-3.5 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-500/30 text-xs font-bold text-[#091A42] dark:text-[#A6D6FE]">
-              <span className="w-2 h-2 rounded-full bg-[#FD5202]" />
-              <span>{isRtl ? sectionConfig?.badgeFa || 'گروه صنعتی و بازرگانی آرسی' : sectionConfig?.badgeEn || 'Rezaei Commerce Group (RCG)'}</span>
+            <div className={`inline-flex items-center self-start ${heroLayout.kickerClass} rounded-full bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-500/30 font-bold text-[#091A42] dark:text-[#A6D6FE] max-w-full`}>
+              <span className="w-2 h-2 rounded-full bg-[#FD5202] shrink-0" />
+              <span className="truncate">{isRtl ? sectionConfig?.badgeFa || 'گروه صنعتی و بازرگانی آرسی' : sectionConfig?.badgeEn || 'Rezaei Commerce Group (RCG)'}</span>
               <span className="text-slate-400">·</span>
-              <span className="text-[#144AE0] dark:text-slate-300">{t.yearsExp}</span>
+              <span className="text-[#144AE0] dark:text-slate-300 whitespace-nowrap">{t.yearsExp}</span>
             </div>
 
             {/* Headline */}
-            <div className="min-h-[120px] sm:min-h-[145px] flex flex-col justify-center">
+            <div className={`${heroLayout.headlineBoxMinHeight} flex flex-col justify-center`}>
               <AnimatePresence mode="wait">
                 <motion.div
                   key={currentIdx}
@@ -115,11 +120,11 @@ export const Hero: React.FC<HeroProps> = ({
                   exit={{ opacity: 0, y: -16 }}
                   transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                 >
-                  <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.1rem] font-black tracking-tight leading-[1.25] text-balance">
+                  <h1 className={`${heroLayout.headlineClass} font-black text-balance`}>
                     <span className="block text-[#091A42] dark:text-white">
                       {isRtl ? currentSlide.titleFa : currentSlide.titleEn}
                     </span>
-                    <span className="block text-[#FD5202] mt-1.5">
+                    <span className="block text-[#FD5202] mt-1 sm:mt-1.5">
                       {isRtl ? currentSlide.highlightFa : currentSlide.highlightEn}
                     </span>
                   </h1>
@@ -128,12 +133,12 @@ export const Hero: React.FC<HeroProps> = ({
             </div>
 
             {/* Subtitle */}
-            <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
+            <p className={`${heroLayout.subtitleClass} text-slate-600 dark:text-slate-300 max-w-2xl`}>
               {isRtl ? currentSlide.subtitleFa : currentSlide.subtitleEn}
             </p>
 
             {/* Primary & Secondary CTAs */}
-            <div className="flex flex-wrap items-center gap-3.5 pt-2">
+            <div className={`flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center ${heroLayout.ctaGroupGap}`}>
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -144,8 +149,16 @@ export const Hero: React.FC<HeroProps> = ({
                     onOpenContactModal
                   )
                 }
-                className="group flex items-center gap-2.5 px-6 py-3.5 text-sm font-bold text-white bg-[#FD5202] hover:bg-[#E04600] rounded-xl shadow-lg shadow-orange-500/25 dark:shadow-orange-950/40 transition-all whitespace-nowrap cursor-pointer"
+                className={`rcg-btn-primary group w-full sm:w-auto flex items-center justify-center gap-2.5 ${heroLayout.ctaButtonClass} font-bold text-white bg-[#FD5202] hover:bg-[#E04600] rounded-xl shadow-lg shadow-orange-500/25 dark:shadow-orange-950/40 whitespace-nowrap cursor-pointer`}
               >
+                {settings?.externalCtaIcon && (
+                  <ExternalIconBadge
+                    iconName={settings.externalCtaIcon}
+                    className="w-4 h-4"
+                    invertColor={true}
+                    fallback={null}
+                  />
+                )}
                 <span>{isRtl ? currentSlide.primaryCtaFa : currentSlide.primaryCtaEn}</span>
                 {isRtl ? (
                   <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
@@ -164,7 +177,7 @@ export const Hero: React.FC<HeroProps> = ({
                     onOpenContactModal
                   )
                 }
-                className="flex items-center gap-2 px-5 py-3.5 text-sm font-bold text-[#091A42] dark:text-slate-100 bg-white hover:bg-blue-50 dark:bg-blue-950/70 dark:hover:bg-blue-900/80 border border-slate-300 dark:border-blue-500/40 rounded-xl transition-all shadow-sm whitespace-nowrap cursor-pointer"
+                className={`rcg-btn-secondary w-full sm:w-auto flex items-center justify-center gap-2 ${heroLayout.ctaButtonClass} font-bold text-[#091A42] dark:text-slate-100 bg-white hover:bg-blue-50 dark:bg-blue-950/70 dark:hover:bg-blue-900/80 border border-slate-300 dark:border-blue-500/40 rounded-xl shadow-sm whitespace-nowrap cursor-pointer`}
               >
                 <Sparkle weight="fill" className="w-4 h-4 text-[#144AE0] dark:text-[#A6D6FE]" />
                 <span>{isRtl ? currentSlide.secondaryCtaFa : currentSlide.secondaryCtaEn}</span>
@@ -172,7 +185,7 @@ export const Hero: React.FC<HeroProps> = ({
             </div>
 
             {/* Slider Pagination */}
-            <div className="flex items-center gap-6 pt-5 border-t border-slate-200 dark:border-slate-800/80 text-sm">
+            <div className={`flex items-center justify-between sm:justify-start ${heroLayout.paginationClass} border-t border-slate-200 dark:border-slate-800/80`}>
               <div className="font-mono tabular-nums text-slate-500 dark:text-slate-400 tracking-wider">
                 <span className="text-[#091A42] dark:text-white font-bold text-base">0{currentIdx + 1}</span>
                 <span className="mx-1 text-slate-400 dark:text-slate-600">/</span>
@@ -244,16 +257,16 @@ export const Hero: React.FC<HeroProps> = ({
 
                 <div className="absolute inset-0 bg-gradient-to-t from-[#091A42] via-[#091A42]/15 to-transparent opacity-85 pointer-events-none" />
 
-                <div className="absolute bottom-4 left-4 right-4 p-3.5 rounded-2xl backdrop-blur-md bg-[#091A42]/90 border border-blue-400/30 flex items-center justify-between text-xs text-white">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-[#FD5202]/20 text-[#FD5202]">
-                      <ShieldCheck weight="duotone" className="w-5 h-5" />
+                <div className={`absolute ${heroLayout.cardOverlayClass} backdrop-blur-md bg-[#091A42]/90 border border-blue-400/30 flex items-center justify-between text-xs text-white`}>
+                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                    <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-[#FD5202]/20 text-[#FD5202] shrink-0">
+                      <ShieldCheck weight="duotone" className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
-                    <div>
-                      <p className="font-bold text-white">
+                    <div className="min-w-0">
+                      <p className="font-bold text-white text-[11px] sm:text-xs truncate">
                         {isRtl ? 'تضمین اصالت و دقت مهندسی' : 'Guaranteed Precision & Spares'}
                       </p>
-                      <p className="text-[11px] text-slate-300">
+                      <p className="text-[10px] sm:text-[11px] text-slate-300 truncate">
                         {isRtl ? 'مطابق استاندارد ماشین‌ابزار آلمان' : 'German Industrial Machining Standards'}
                       </p>
                     </div>
@@ -273,45 +286,45 @@ export const Hero: React.FC<HeroProps> = ({
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.55, delay: 0.15 }}
-          className="mt-14 pt-8 border-t border-slate-200 dark:border-slate-800/80 grid grid-cols-2 md:grid-cols-4 gap-6"
+          className={`${heroLayout.metricsGridClass} border-t border-slate-200 dark:border-slate-800/80 grid grid-cols-2 md:grid-cols-4`}
         >
-          <div className="flex items-center gap-3.5">
-            <div className="p-3 rounded-2xl bg-white dark:bg-blue-950/80 border border-slate-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] shadow-sm">
-              <Users weight="duotone" className="w-6 h-6" />
+          <div className="flex items-center gap-2 sm:gap-3.5">
+            <div className={`${heroLayout.metricIconBoxClass} bg-white dark:bg-blue-950/80 border border-slate-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] shadow-sm shrink-0`}>
+              <Users weight="duotone" className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <p className="font-black text-lg text-[#091A42] dark:text-white tabular-nums">+۴,۰۰۰</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">{t.stats.units}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3.5">
-            <div className="p-3 rounded-2xl bg-white dark:bg-blue-950/80 border border-slate-200 dark:border-blue-800 text-[#FD5202] shadow-sm">
-              <Toolbox weight="duotone" className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="font-black text-lg text-[#091A42] dark:text-white">پایون (Payon)</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">{t.stats.rep}</p>
+            <div className="min-w-0">
+              <p className={`font-black ${heroLayout.metricValueClass} text-[#091A42] dark:text-white tabular-nums`}>+۴,۰۰۰</p>
+              <p className={`${heroLayout.metricLabelClass} text-slate-600 dark:text-slate-400 truncate`}>{t.stats.units}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3.5">
-            <div className="p-3 rounded-2xl bg-white dark:bg-blue-950/80 border border-slate-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] shadow-sm">
-              <Cpu weight="duotone" className="w-6 h-6" />
+          <div className="flex items-center gap-2 sm:gap-3.5">
+            <div className={`${heroLayout.metricIconBoxClass} bg-white dark:bg-blue-950/80 border border-slate-200 dark:border-blue-800 text-[#FD5202] shadow-sm shrink-0`}>
+              <Toolbox weight="duotone" className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <p className="font-black text-lg text-[#091A42] dark:text-white tabular-nums">+۲۰,۰۰۰</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">{t.stats.sharpened}</p>
+            <div className="min-w-0">
+              <p className={`font-black ${heroLayout.metricValueClass} text-[#091A42] dark:text-white truncate`}>پایون (Payon)</p>
+              <p className={`${heroLayout.metricLabelClass} text-slate-600 dark:text-slate-400 truncate`}>{t.stats.rep}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3.5">
-            <div className="p-3 rounded-2xl bg-white dark:bg-blue-950/80 border border-slate-200 dark:border-blue-800 text-[#FD5202] shadow-sm">
-              <ShieldCheck weight="duotone" className="w-6 h-6" />
+          <div className="flex items-center gap-2 sm:gap-3.5">
+            <div className={`${heroLayout.metricIconBoxClass} bg-white dark:bg-blue-950/80 border border-slate-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] shadow-sm shrink-0`}>
+              <Cpu weight="duotone" className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <p className="font-black text-lg text-[#091A42] dark:text-white">VOLLMER</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">{t.stats.germanTech}</p>
+            <div className="min-w-0">
+              <p className={`font-black ${heroLayout.metricValueClass} text-[#091A42] dark:text-white tabular-nums`}>+۲۰,۰۰۰</p>
+              <p className={`${heroLayout.metricLabelClass} text-slate-600 dark:text-slate-400 truncate`}>{t.stats.sharpened}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3.5">
+            <div className={`${heroLayout.metricIconBoxClass} bg-white dark:bg-blue-950/80 border border-slate-200 dark:border-blue-800 text-[#FD5202] shadow-sm shrink-0`}>
+              <ShieldCheck weight="duotone" className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+            <div className="min-w-0">
+              <p className={`font-black ${heroLayout.metricValueClass} text-[#091A42] dark:text-white`}>VOLLMER</p>
+              <p className={`${heroLayout.metricLabelClass} text-slate-600 dark:text-slate-400 truncate`}>{t.stats.germanTech}</p>
             </div>
           </div>
         </motion.div>

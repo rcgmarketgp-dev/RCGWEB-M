@@ -1,0 +1,607 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 3: Reusable Security Primitives
+    // -------------------------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'rcgroup.mdp@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin();
+    }
+
+    // -------------------------------------------------------------------------
+    // Validation Blueprints (Called on both create and update)
+    // -------------------------------------------------------------------------
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'preferredLanguage', 'themePreference', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'preferredLanguage', 'themePreference', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1000))
+        && data.preferredLanguage in ['fa', 'en']
+        && data.themePreference in ['light', 'dark']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'phone', 'updatedAt'])
+        && isValidId(data.uid)
+        && (data.uid == request.auth.uid || isAdmin())
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 40))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'role', 'createdAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.role in ['admin', 'super_admin']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSiteConfigDoc(data) {
+      return data.keys().hasAll(['configKey', 'data', 'updatedBy', 'updatedAt'])
+        && data.keys().hasOnly(['configKey', 'data', 'updatedBy', 'updatedAt'])
+        && data.configKey in ['settings', 'sections', 'navigation']
+        && data.data is map
+        && isValidId(data.updatedBy)
+        && data.updatedBy == request.auth.uid
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidHeroSlide(data) {
+      return data.keys().hasAll(['id', 'titleFa', 'titleEn', 'image', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'order', 'titleFa', 'titleEn', 'highlightFa', 'highlightEn',
+          'subtitleFa', 'subtitleEn', 'image', 'primaryCtaFa', 'primaryCtaEn',
+          'primaryCtaLink', 'secondaryCtaFa', 'secondaryCtaEn', 'secondaryCtaLink', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.titleFa is string && data.titleFa.size() <= 300
+        && data.titleEn is string && data.titleEn.size() <= 300
+        && (!('order' in data) || data.order is number)
+        && (!('highlightFa' in data) || (data.highlightFa is string && data.highlightFa.size() <= 200))
+        && (!('highlightEn' in data) || (data.highlightEn is string && data.highlightEn.size() <= 200))
+        && (!('subtitleFa' in data) || (data.subtitleFa is string && data.subtitleFa.size() <= 800))
+        && (!('subtitleEn' in data) || (data.subtitleEn is string && data.subtitleEn.size() <= 800))
+        && data.image is string && data.image.size() <= 700000
+        && (!('primaryCtaFa' in data) || (data.primaryCtaFa is string && data.primaryCtaFa.size() <= 120))
+        && (!('primaryCtaEn' in data) || (data.primaryCtaEn is string && data.primaryCtaEn.size() <= 120))
+        && (!('primaryCtaLink' in data) || (data.primaryCtaLink is string && data.primaryCtaLink.size() <= 300))
+        && (!('secondaryCtaFa' in data) || (data.secondaryCtaFa is string && data.secondaryCtaFa.size() <= 120))
+        && (!('secondaryCtaEn' in data) || (data.secondaryCtaEn is string && data.secondaryCtaEn.size() <= 120))
+        && (!('secondaryCtaLink' in data) || (data.secondaryCtaLink is string && data.secondaryCtaLink.size() <= 300))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDepartment(data) {
+      return data.keys().hasAll(['id', 'key', 'titleFa', 'titleEn', 'image', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'key', 'order', 'titleFa', 'titleEn', 'taglineFa', 'taglineEn',
+          'shortDescFa', 'shortDescEn', 'fullDescFa', 'fullDescEn', 'iconName',
+          'image', 'subSectionTitleFa', 'subSectionTitleEn', 'bottomBannerFa',
+          'bottomBannerEn', 'bottomBannerLink', 'subCards', 'servicesFa', 'servicesEn',
+          'statsFa', 'statsEn', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.key in ['sales', 'service', 'sharpening', 'overhaul']
+        && (!('order' in data) || data.order is number)
+        && data.titleFa is string && data.titleFa.size() <= 250
+        && data.titleEn is string && data.titleEn.size() <= 250
+        && data.image is string && data.image.size() <= 700000
+        && (!('subCards' in data) || (data.subCards is list && data.subCards.size() <= 12))
+        && (!('servicesFa' in data) || (data.servicesFa is list && data.servicesFa.size() <= 20))
+        && (!('servicesEn' in data) || (data.servicesEn is list && data.servicesEn.size() <= 20))
+        && (!('statsFa' in data) || (data.statsFa is list && data.statsFa.size() <= 10))
+        && (!('statsEn' in data) || (data.statsEn is list && data.statsEn.size() <= 10))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['id', 'titleFa', 'titleEn', 'category', 'brand', 'model', 'condition', 'image', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'order', 'titleFa', 'titleEn', 'category', 'categoryFa', 'categoryEn',
+          'brand', 'model', 'year', 'condition', 'conditionFa', 'conditionEn',
+          'power', 'tableSize', 'feedSpeed', 'priceFa', 'priceEn',
+          'downPaymentFa', 'downPaymentEn', 'installmentChecksFa', 'installmentChecksEn',
+          'installmentAvailable', 'specsFa', 'specsEn', 'image', 'badgeFa', 'badgeEn',
+          'featuredPoster', 'isActive', 'precisionRating', 'durabilityRating',
+          'efficiencyRating', 'qualityBadgeFa', 'qualityBadgeEn', 'tags', 'stations', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && (!('order' in data) || data.order is number)
+        && data.titleFa is string && data.titleFa.size() <= 250
+        && data.titleEn is string && data.titleEn.size() <= 250
+        && data.category in ['saws', 'edgebanders', 'cnc', 'blades', 'refurbished']
+        && data.brand is string && data.brand.size() <= 120
+        && data.model is string && data.model.size() <= 120
+        && data.condition in ['new', 'used']
+        && data.image is string && data.image.size() <= 700000
+        && (!('isActive' in data) || data.isActive is bool)
+        && (!('specsFa' in data) || (data.specsFa is list && data.specsFa.size() <= 30))
+        && (!('specsEn' in data) || (data.specsEn is list && data.specsEn.size() <= 30))
+        && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12 && (data.tags.size() == 0 || data.tags[0] is string)))
+        && (!('stations' in data) || (data.stations is list && data.stations.size() <= 10))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMediaItem(data) {
+      return data.keys().hasAll(['id', 'type', 'titleFa', 'titleEn', 'image', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'order', 'type', 'typeFa', 'typeEn', 'titleFa', 'titleEn',
+          'dateFa', 'dateEn', 'readTimeFa', 'readTimeEn', 'summaryFa', 'summaryEn',
+          'contentFa', 'contentEn', 'image', 'videoUrl', 'authorFa', 'authorEn',
+          'isActive', 'tags', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && (!('order' in data) || data.order is number)
+        && data.type in ['news', 'article', 'video', 'project']
+        && data.titleFa is string && data.titleFa.size() <= 300
+        && data.titleEn is string && data.titleEn.size() <= 300
+        && data.image is string && data.image.size() <= 700000
+        && (!('contentFa' in data) || (data.contentFa is string && data.contentFa.size() <= 20000))
+        && (!('contentEn' in data) || (data.contentEn is string && data.contentEn.size() <= 20000))
+        && (!('isActive' in data) || data.isActive is bool)
+        && (!('tags' in data) || (data.tags is list && data.tags.size() <= 12 && (data.tags.size() == 0 || data.tags[0] is string)))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCampaign(data) {
+      return data.keys().hasAll(['id', 'slug', 'titleFa', 'titleEn', 'heroImage', 'isActive', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'order', 'slug', 'titleFa', 'titleEn', 'badgeFa', 'badgeEn',
+          'headlineFa', 'headlineEn', 'subheadlineFa', 'subheadlineEn', 'heroImage',
+          'ctaTextFa', 'ctaTextEn', 'secondaryCtaFa', 'secondaryCtaEn', 'featuredMachineId',
+          'specialOfferFa', 'specialOfferEn', 'discountPercentage', 'downPaymentFa',
+          'downPaymentEn', 'installmentsCountFa', 'installmentsCountEn', 'deliveryTermsFa',
+          'deliveryTermsEn', 'warrantyFa', 'warrantyEn', 'highlightsFa', 'highlightsEn',
+          'registrationTitleFa', 'registrationTitleEn', 'registrationSubtitleFa',
+          'registrationSubtitleEn', 'isActive', 'viewsCount', 'conversionsCount', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && (!('order' in data) || data.order is number)
+        && data.slug is string && data.slug.size() <= 150
+        && data.titleFa is string && data.titleFa.size() <= 250
+        && data.titleEn is string && data.titleEn.size() <= 250
+        && data.heroImage is string && data.heroImage.size() <= 700000
+        && data.isActive is bool
+        && (!('highlightsFa' in data) || (data.highlightsFa is list && data.highlightsFa.size() <= 20))
+        && (!('highlightsEn' in data) || (data.highlightsEn is list && data.highlightsEn.size() <= 20))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBrandAsset(data) {
+      return data.keys().hasAll(['id', 'titleFa', 'titleEn', 'category', 'url', 'fileSize', 'fileType', 'uploadedAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'titleFa', 'titleEn', 'category', 'url', 'fileSize', 'fileType', 'uploadedAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.titleFa is string && data.titleFa.size() <= 200
+        && data.titleEn is string && data.titleEn.size() <= 200
+        && data.category in ['logo', 'hero', 'departments', 'catalog', 'campaigns', 'media', 'photo', 'brandbook', 'certificate']
+        && data.url is string && data.url.size() <= 700000
+        && data.fileSize is string && data.fileSize.size() <= 40
+        && data.fileType is string && data.fileType.size() <= 60
+        && data.uploadedAt is string && data.uploadedAt.size() <= 80
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharpeningOrder(data) {
+      return data.keys().hasAll([
+          'id', 'userId', 'customerName', 'phone', 'city', 'bladeType',
+          'diameter', 'teethCount', 'serviceType', 'quantity', 'estimatedPrice',
+          'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'customerName', 'phone', 'city', 'bladeType',
+          'diameter', 'teethCount', 'serviceType', 'quantity', 'estimatedPrice',
+          'status', 'createdAtLabel', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.userId)
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && data.phone is string && data.phone.size() >= 5 && data.phone.size() <= 40
+        && data.city is string && data.city.size() <= 120
+        && data.bladeType is string && data.bladeType.size() <= 120
+        && data.diameter is string && data.diameter.size() <= 60
+        && data.teethCount is string && data.teethCount.size() <= 40
+        && data.serviceType is string && data.serviceType.size() <= 160
+        && data.quantity is number && data.quantity >= 1 && data.quantity <= 500
+        && data.estimatedPrice is string && data.estimatedPrice.size() <= 160
+        && data.status in ['new', 'in_progress', 'completed', 'cancelled']
+        && (!('createdAtLabel' in data) || (data.createdAtLabel is string && data.createdAtLabel.size() <= 80))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInquiry(data) {
+      return data.keys().hasAll(['id', 'userId', 'name', 'phone', 'department', 'subject', 'message', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'name', 'phone', 'email', 'department', 'subject', 'message', 'status', 'createdAtLabel', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.userId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.phone is string && data.phone.size() >= 5 && data.phone.size() <= 40
+        && (!('email' in data) || (data.email is string && data.email.size() <= 200))
+        && data.department is string && data.department.size() <= 160
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 250
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 2000
+        && data.status in ['new', 'contacted', 'resolved']
+        && (!('createdAtLabel' in data) || (data.createdAtLabel is string && data.createdAtLabel.size() <= 80))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCampaignInquiry(data) {
+      return data.keys().hasAll([
+          'id', 'userId', 'campaignId', 'campaignTitle', 'fullName', 'phone',
+          'city', 'workshopType', 'interestedMachine', 'paymentPreference',
+          'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'campaignId', 'campaignTitle', 'fullName', 'phone',
+          'city', 'workshopType', 'interestedMachine', 'paymentPreference',
+          'status', 'createdAtLabel', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.userId)
+        && isValidId(data.campaignId)
+        && data.campaignTitle is string && data.campaignTitle.size() >= 1 && data.campaignTitle.size() <= 250
+        && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 120
+        && data.phone is string && data.phone.size() >= 5 && data.phone.size() <= 40
+        && data.city is string && data.city.size() <= 120
+        && data.workshopType is string && data.workshopType.size() <= 160
+        && data.interestedMachine is string && data.interestedMachine.size() <= 250
+        && data.paymentPreference in ['cash', 'installment', 'lease']
+        && data.status in ['new', 'contacted', 'contracted', 'archived']
+        && (!('createdAtLabel' in data) || (data.createdAtLabel is string && data.createdAtLabel.size() <= 80))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Blocks
+    // -------------------------------------------------------------------------
+
+    // Startup connectivity check document
+    match /test/connection {
+      allow get: if true;
+    }
+
+    // User Profiles + Isolated PII Subcollection
+    match /user_profiles/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'preferredLanguage', 'themePreference', 'updatedAt']);
+      allow delete: if isValidId(userId) && isAdmin();
+
+      match /private/{docId} {
+        allow get: if isValidId(userId)
+          && isValidId(docId)
+          && (isOwner(userId) || isAdmin())
+          && exists(/databases/$(database)/documents/user_profiles/$(userId))
+          && get(/databases/$(database)/documents/user_profiles/$(userId)).data.uid == userId;
+        allow list: if false;
+        allow create: if isValidId(userId)
+          && isValidId(docId)
+          && (isOwner(userId) || isAdmin())
+          && exists(/databases/$(database)/documents/user_profiles/$(userId))
+          && get(/databases/$(database)/documents/user_profiles/$(userId)).data.uid == userId
+          && isValidUserPrivateInfo(incoming())
+          && incoming().uid == userId
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId)
+          && isValidId(docId)
+          && (isOwner(userId) || isAdmin())
+          && exists(/databases/$(database)/documents/user_profiles/$(userId))
+          && get(/databases/$(database)/documents/user_profiles/$(userId)).data.uid == userId
+          && isValidUserPrivateInfo(incoming())
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'phone', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(docId) && isAdmin();
+      }
+    }
+
+    // Trusted Admin Roster
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(userId)
+        && isBootstrappedAdmin()
+        && isValidAdminRecord(incoming())
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(userId)
+        && isBootstrappedAdmin()
+        && isValidAdminRecord(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'role']);
+      allow delete: if isValidId(userId) && isBootstrappedAdmin();
+    }
+
+    // Public CMS Configurations (Admin Write Only)
+    match /site_configs/{configId} {
+      allow get: if isValidId(configId);
+      allow list: if true;
+      allow create: if isValidId(configId)
+        && isAdmin()
+        && isValidSiteConfigDoc(incoming())
+        && incoming().configKey == configId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(configId)
+        && isAdmin()
+        && isValidSiteConfigDoc(incoming())
+        && incoming().configKey == existing().configKey
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['data', 'updatedBy', 'updatedAt']);
+      allow delete: if isValidId(configId) && isAdmin();
+    }
+
+    match /hero_slides/{slideId} {
+      allow get: if isValidId(slideId);
+      allow list: if true;
+      allow create: if isValidId(slideId)
+        && isAdmin()
+        && isValidHeroSlide(incoming())
+        && incoming().id == slideId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(slideId)
+        && isAdmin()
+        && isValidHeroSlide(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'order', 'titleFa', 'titleEn', 'highlightFa', 'highlightEn',
+          'subtitleFa', 'subtitleEn', 'image', 'primaryCtaFa', 'primaryCtaEn',
+          'primaryCtaLink', 'secondaryCtaFa', 'secondaryCtaEn', 'secondaryCtaLink', 'updatedAt'
+        ]);
+      allow delete: if isValidId(slideId) && isAdmin();
+    }
+
+    match /departments/{deptId} {
+      allow get: if isValidId(deptId);
+      allow list: if true;
+      allow create: if isValidId(deptId)
+        && isAdmin()
+        && isValidDepartment(incoming())
+        && incoming().id == deptId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(deptId)
+        && isAdmin()
+        && isValidDepartment(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'key', 'order', 'titleFa', 'titleEn', 'taglineFa', 'taglineEn',
+          'shortDescFa', 'shortDescEn', 'fullDescFa', 'fullDescEn', 'iconName',
+          'image', 'subSectionTitleFa', 'subSectionTitleEn', 'bottomBannerFa',
+          'bottomBannerEn', 'bottomBannerLink', 'subCards', 'servicesFa', 'servicesEn',
+          'statsFa', 'statsEn', 'updatedAt'
+        ]);
+      allow delete: if isValidId(deptId) && isAdmin();
+    }
+
+    match /products/{productId} {
+      allow get: if isValidId(productId);
+      allow list: if true;
+      allow create: if isValidId(productId)
+        && isAdmin()
+        && isValidProduct(incoming())
+        && incoming().id == productId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(productId)
+        && isAdmin()
+        && isValidProduct(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'order', 'titleFa', 'titleEn', 'category', 'categoryFa', 'categoryEn',
+          'brand', 'model', 'year', 'condition', 'conditionFa', 'conditionEn',
+          'power', 'tableSize', 'feedSpeed', 'priceFa', 'priceEn',
+          'downPaymentFa', 'downPaymentEn', 'installmentChecksFa', 'installmentChecksEn',
+          'installmentAvailable', 'specsFa', 'specsEn', 'image', 'badgeFa', 'badgeEn',
+          'featuredPoster', 'isActive', 'precisionRating', 'durabilityRating',
+          'efficiencyRating', 'qualityBadgeFa', 'qualityBadgeEn', 'tags', 'stations', 'updatedAt'
+        ]);
+      allow delete: if isValidId(productId) && isAdmin();
+    }
+
+    match /media_items/{mediaId} {
+      allow get: if isValidId(mediaId);
+      allow list: if true;
+      allow create: if isValidId(mediaId)
+        && isAdmin()
+        && isValidMediaItem(incoming())
+        && incoming().id == mediaId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(mediaId)
+        && isAdmin()
+        && isValidMediaItem(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'order', 'type', 'typeFa', 'typeEn', 'titleFa', 'titleEn',
+          'dateFa', 'dateEn', 'readTimeFa', 'readTimeEn', 'summaryFa', 'summaryEn',
+          'contentFa', 'contentEn', 'image', 'videoUrl', 'authorFa', 'authorEn',
+          'isActive', 'tags', 'updatedAt'
+        ]);
+      allow delete: if isValidId(mediaId) && isAdmin();
+    }
+
+    match /campaigns/{campaignId} {
+      allow get: if isValidId(campaignId);
+      allow list: if true;
+      allow create: if isValidId(campaignId)
+        && isAdmin()
+        && isValidCampaign(incoming())
+        && incoming().id == campaignId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(campaignId)
+        && isAdmin()
+        && isValidCampaign(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'order', 'slug', 'titleFa', 'titleEn', 'badgeFa', 'badgeEn',
+          'headlineFa', 'headlineEn', 'subheadlineFa', 'subheadlineEn', 'heroImage',
+          'ctaTextFa', 'ctaTextEn', 'secondaryCtaFa', 'secondaryCtaEn', 'featuredMachineId',
+          'specialOfferFa', 'specialOfferEn', 'discountPercentage', 'downPaymentFa',
+          'downPaymentEn', 'installmentsCountFa', 'installmentsCountEn', 'deliveryTermsFa',
+          'deliveryTermsEn', 'warrantyFa', 'warrantyEn', 'highlightsFa', 'highlightsEn',
+          'registrationTitleFa', 'registrationTitleEn', 'registrationSubtitleFa',
+          'registrationSubtitleEn', 'isActive', 'viewsCount', 'conversionsCount', 'updatedAt'
+        ]);
+      allow delete: if isValidId(campaignId) && isAdmin();
+    }
+
+    match /brand_assets/{assetId} {
+      allow get: if isValidId(assetId);
+      allow list: if true;
+      allow create: if isValidId(assetId)
+        && isAdmin()
+        && isValidBrandAsset(incoming())
+        && incoming().id == assetId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(assetId)
+        && isAdmin()
+        && isValidBrandAsset(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'titleFa', 'titleEn', 'category', 'url', 'fileSize', 'fileType', 'uploadedAt', 'updatedAt'
+        ]);
+      allow delete: if isValidId(assetId) && isAdmin();
+    }
+
+    // Customer Sharpening Orders (User-Owned + Admin Management)
+    match /sharpening_orders/{orderId} {
+      allow get: if isValidId(orderId) && isVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isValidId(orderId)
+        && isVerified()
+        && isValidSharpeningOrder(incoming())
+        && incoming().id == orderId
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'new'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(orderId)
+        && isVerified()
+        && isValidSharpeningOrder(incoming())
+        && incoming().id == existing().id
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])) ||
+          (
+            existing().userId == request.auth.uid
+            && !(existing().status in ['completed', 'cancelled'])
+            && incoming().status == existing().status
+            && incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(orderId) && isAdmin();
+    }
+
+    // Customer Consultation Inquiries (User-Owned + Admin Management)
+    match /inquiries/{inquiryId} {
+      allow get: if isValidId(inquiryId) && isVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isValidId(inquiryId)
+        && isVerified()
+        && isValidInquiry(incoming())
+        && incoming().id == inquiryId
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'new'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(inquiryId)
+        && isVerified()
+        && isValidInquiry(incoming())
+        && incoming().id == existing().id
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isValidId(inquiryId) && isAdmin();
+    }
+
+    // Campaign Leads (User-Owned + Admin Management)
+    match /campaign_inquiries/{inquiryId} {
+      allow get: if isValidId(inquiryId) && isVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (existing().userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isValidId(inquiryId)
+        && isVerified()
+        && isValidCampaignInquiry(incoming())
+        && incoming().id == inquiryId
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'new'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(inquiryId)
+        && isVerified()
+        && isValidCampaignInquiry(incoming())
+        && incoming().id == existing().id
+        && incoming().userId == existing().userId
+        && incoming().campaignId == existing().campaignId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'updatedAt']);
+      allow delete: if isValidId(inquiryId) && isAdmin();
+    }
+  }
+}

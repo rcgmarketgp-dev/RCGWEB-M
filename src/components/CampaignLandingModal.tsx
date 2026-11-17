@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CampaignLanding, CampaignInquiry, Language, Product, SiteSettings } from '../types';
 import { RcgLogo } from './RcgLogo';
+import { GoogleBrandIcon } from './GoogleBrandIcon';
+import { useFirebase } from '../context/FirebaseContext';
 import { useForm } from 'react-hook-form';
 import {
   Sparkles, CheckCircle2, ShieldCheck, ArrowLeft, ArrowRight, Clock,
@@ -38,19 +40,23 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
   onRegisterInquiry,
 }) => {
   const isRtl = language === 'fa';
+  const { user, signInWithGoogle } = useFirebase();
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submittedPhone, setSubmittedPhone] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [submitNotice, setSubmitNotice] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const {
     register,
     handleSubmit,
+    setValue,
     watch,
     reset,
     formState: { errors },
   } = useForm<CampaignFormInputs>({
     defaultValues: {
-      fullName: '',
+      fullName: user?.displayName || '',
       phone: '',
       city: '',
       workshopType: 'کارگاه کابینت و دکوراسیون',
@@ -58,11 +64,33 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
     },
   });
 
+  useEffect(() => {
+    if (user?.displayName) {
+      setValue('fullName', user.displayName);
+    }
+  }, [user?.displayName, setValue]);
+
   const paymentPreference = watch('paymentPreference');
 
   if (!isOpen) return null;
 
-  const onSubmit = (data: CampaignFormInputs) => {
+  const onSubmit = async (data: CampaignFormInputs) => {
+    setSubmitNotice(null);
+    let activeUser = user;
+    if (!activeUser) {
+      setSubmitting(true);
+      activeUser = await signInWithGoogle();
+      setSubmitting(false);
+      if (!activeUser) {
+        setSubmitNotice(
+          isRtl
+            ? 'برای ثبت نام در کمپین و رزرو اولویت، ورود با گوگل الزامی است.'
+            : 'Please sign in with Google to register and reserve your priority spot.'
+        );
+        return;
+      }
+    }
+
     const newInq: CampaignInquiry = {
       id: `CMP-INQ-${Math.floor(100 + Math.random() * 900)}`,
       campaignId: campaign.id,
@@ -105,15 +133,17 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-50/98 dark:bg-slate-950/98 backdrop-blur-xl text-slate-900 dark:text-white animate-in fade-in duration-200">
       {/* Top Banner Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#060F26]/95 backdrop-blur-md border-b border-slate-200 dark:border-blue-900/50 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-3">
-          <RcgLogo
-            settings={settings}
-            isDark={isDark}
-            surface="auto"
-            heightScale={0.88}
-            showSubtitle={false}
-          />
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#060F26]/95 backdrop-blur-md border-b border-slate-200 dark:border-blue-900/50 px-3 sm:px-8 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 shadow-sm">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="min-w-0 max-w-[140px] sm:max-w-none">
+            <RcgLogo
+              settings={settings}
+              isDark={isDark}
+              surface="auto"
+              heightScale={0.85}
+              showSubtitle={false}
+            />
+          </div>
           <div className="h-5 w-px bg-slate-200 dark:bg-blue-900/60 hidden sm:block" />
           <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-50 dark:bg-[#FD5202]/15 text-[#FD5202] border border-orange-200 dark:border-[#FD5202]/30">
             <Sparkles className="w-3 h-3" />
@@ -121,10 +151,11 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           <button
             onClick={handleShare}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-blue-900/60 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-[#144AE0] transition-colors cursor-pointer"
+            aria-label={isRtl ? 'اشتراک لینک' : 'Share'}
+            className="min-w-[38px] min-h-[38px] flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-blue-900/60 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-[#144AE0] transition-colors cursor-pointer"
           >
             {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Share2 className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{copiedLink ? (isRtl ? 'لینک کپی شد' : 'Copied!') : (isRtl ? 'اشتراک لینک' : 'Share')}</span>
@@ -132,71 +163,72 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
 
           <button
             onClick={onClose}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#091A42] hover:bg-[#FD5202] dark:bg-slate-800 dark:hover:bg-[#FD5202] text-xs font-bold text-white transition-all shadow-sm cursor-pointer"
+            className="min-h-[38px] flex items-center gap-1 px-3 sm:px-4 py-1.5 rounded-xl bg-[#091A42] hover:bg-[#FD5202] dark:bg-slate-800 dark:hover:bg-[#FD5202] text-[11px] sm:text-xs font-bold text-white transition-all shadow-sm cursor-pointer whitespace-nowrap"
           >
-            <span>{isRtl ? 'بازگشت به سایت اصلی' : 'Back to Main Site'}</span>
+            <span className="sm:hidden">{isRtl ? 'بازگشت به سایت' : 'Back'}</span>
+            <span className="hidden sm:inline">{isRtl ? 'بازگشت به سایت اصلی' : 'Back to Main Site'}</span>
             {isRtl ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
         </div>
       </header>
 
       {/* Main Campaign Container */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-12">
+      <main className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-12 space-y-8 sm:space-y-12">
         {/* Hero Section */}
-        <section className="relative rounded-3xl overflow-hidden border border-slate-200 dark:border-blue-800/40 bg-white dark:bg-gradient-to-br dark:from-[#091A42] dark:via-[#060F26] dark:to-[#040A1A] p-6 sm:p-10 lg:p-12 shadow-xl">
+        <section className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200 dark:border-blue-800/40 bg-white dark:bg-gradient-to-br dark:from-[#091A42] dark:via-[#060F26] dark:to-[#040A1A] p-4 sm:p-10 lg:p-12 shadow-xl">
           <div className="absolute inset-0 opacity-30 dark:opacity-15 rcg-pattern-triangles dark:rcg-pattern-triangles-dark pointer-events-none" />
 
-          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12 items-center">
             {/* Left/Right Text Column */}
-            <div className="lg:col-span-7 space-y-6">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 dark:bg-[#FD5202]/20 border border-orange-200 dark:border-[#FD5202]/40 text-xs font-black text-[#FD5202] tracking-wide">
-                <Sparkles className="w-4 h-4" />
+            <div className="lg:col-span-7 space-y-4 sm:space-y-6">
+              <div className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-full bg-orange-50 dark:bg-[#FD5202]/20 border border-orange-200 dark:border-[#FD5202]/40 text-[11px] sm:text-xs font-black text-[#FD5202] tracking-wide">
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 <span>{isRtl ? campaign.badgeFa : campaign.badgeEn}</span>
               </div>
 
-              <div className="space-y-3">
-                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-[#091A42] dark:text-white leading-tight tracking-tight">
+              <div className="space-y-2.5 sm:space-y-3">
+                <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-[#091A42] dark:text-white leading-snug sm:leading-tight tracking-tight">
                   {isRtl ? campaign.headlineFa : campaign.headlineEn}
                 </h1>
-                <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed">
                   {isRtl ? campaign.subheadlineFa : campaign.subheadlineEn}
                 </p>
               </div>
 
               {/* Special Offer Box */}
-              <div className="p-4 rounded-2xl bg-blue-50/80 dark:bg-gradient-to-r dark:from-[#FD5202]/15 dark:via-[#144AE0]/15 dark:to-transparent border border-blue-200 dark:border-[#FD5202]/40 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-[#FD5202] text-white flex items-center justify-center shrink-0 shadow-md">
-                  <Percent className="w-6 h-6" />
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-50/80 dark:bg-gradient-to-r dark:from-[#FD5202]/15 dark:via-[#144AE0]/15 dark:to-transparent border border-blue-200 dark:border-[#FD5202]/40 flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[#FD5202] text-white flex items-center justify-center shrink-0 shadow-md">
+                  <Percent className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <div>
-                  <div className="text-xs font-bold text-[#144AE0] dark:text-[#A6D6FE]">
+                <div className="min-w-0">
+                  <div className="text-[11px] sm:text-xs font-bold text-[#144AE0] dark:text-[#A6D6FE]">
                     {isRtl ? 'شرایط ویژه جشنواره RCG' : 'Exclusive Festival Terms'}
                   </div>
-                  <div className="text-sm sm:text-base font-extrabold text-[#091A42] dark:text-white">
+                  <div className="text-xs sm:text-base font-extrabold text-[#091A42] dark:text-white leading-snug">
                     {isRtl ? campaign.specialOfferFa : campaign.specialOfferEn}
                   </div>
                 </div>
               </div>
 
               {/* CTA Buttons */}
-              <div className="flex flex-wrap items-center gap-3 pt-2">
+              <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-3 pt-1 sm:pt-2">
                 <motion.button
                   whileHover={{ scale: 1.02, y: -2 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={scrollToForm}
-                  className="px-6 py-3.5 rounded-2xl bg-[#FD5202] hover:bg-[#E04600] text-white text-sm sm:text-base font-black shadow-lg shadow-orange-500/25 transition-all flex items-center gap-2.5 cursor-pointer"
+                  className="w-full sm:w-auto min-h-[46px] px-5 sm:px-6 py-3.5 rounded-2xl bg-[#FD5202] hover:bg-[#E04600] text-white text-xs sm:text-base font-black shadow-lg shadow-orange-500/25 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
                 >
                   <span>{isRtl ? campaign.ctaTextFa : campaign.ctaTextEn}</span>
-                  {isRtl ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
+                  {isRtl ? <ArrowLeft className="w-4 h-4 shrink-0" /> : <ArrowRight className="w-4 h-4 shrink-0" />}
                 </motion.button>
 
                 <a
                   href="/assets/aistudio/RCG_BrandBook_compressed_2221a68b.pdf"
                   target="_blank"
                   rel="noreferrer"
-                  className="px-5 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900/80 dark:hover:bg-slate-800 text-[#091A42] dark:text-slate-200 border border-slate-200 dark:border-blue-900/60 text-xs sm:text-sm font-bold transition-all flex items-center gap-2"
+                  className="w-full sm:w-auto min-h-[46px] px-5 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900/80 dark:hover:bg-slate-800 text-[#091A42] dark:text-slate-200 border border-slate-200 dark:border-blue-900/60 text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2"
                 >
-                  <Download className="w-4 h-4 text-[#144AE0] dark:text-[#A6D6FE]" />
+                  <Download className="w-4 h-4 text-[#144AE0] dark:text-[#A6D6FE] shrink-0" />
                   <span>{isRtl ? campaign.secondaryCtaFa : campaign.secondaryCtaEn}</span>
                 </a>
               </div>
@@ -233,20 +265,20 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
                   </span>
                 </div>
 
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950 via-slate-950/85 to-transparent p-4 flex items-center justify-between">
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950 via-slate-950/85 to-transparent p-3 sm:p-4 flex items-center justify-between gap-2">
                   <div>
-                    <div className="text-[11px] text-slate-400">
+                    <div className="text-[10px] sm:text-[11px] text-slate-400">
                       {isRtl ? 'تسهیلات پرداختی' : 'Financing Terms'}
                     </div>
-                    <div className="text-sm font-black text-[#FD5202]">
+                    <div className="text-xs sm:text-sm font-black text-[#FD5202]">
                       {isRtl ? campaign.installmentsCountFa : campaign.installmentsCountEn}
                     </div>
                   </div>
                   <div className="text-right rtl:text-right ltr:text-left">
-                    <div className="text-[11px] text-slate-400">
+                    <div className="text-[10px] sm:text-[11px] text-slate-400">
                       {isRtl ? 'پیش‌پرداخت نقدی' : 'Down Payment'}
                     </div>
-                    <div className="text-sm font-black text-white">
+                    <div className="text-xs sm:text-sm font-black text-white">
                       {isRtl ? campaign.downPaymentFa : campaign.downPaymentEn}
                     </div>
                   </div>
@@ -257,9 +289,9 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
         </section>
 
         {/* Value Pillars */}
-        <section className="space-y-6">
+        <section className="space-y-4 sm:space-y-6">
           <div className="text-center max-w-2xl mx-auto space-y-2">
-            <h2 className="text-xl sm:text-2xl font-black text-[#091A42] dark:text-white">
+            <h2 className="text-lg sm:text-2xl font-black text-[#091A42] dark:text-white">
               {isRtl ? 'مزایای تخصصی و تضمین‌های این کمپین' : 'Key Advantages & Guarantees'}
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
@@ -269,11 +301,11 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
             {(isRtl ? campaign.highlightsFa : campaign.highlightsEn).map((hl, idx) => (
               <div
                 key={idx}
-                className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900/50 hover:border-[#FD5202]/60 transition-all flex items-start gap-3.5 shadow-sm"
+                className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-900/50 hover:border-[#FD5202]/60 transition-all flex items-start gap-3 sm:gap-3.5 shadow-sm"
               >
                 <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-[#FD5202]/15 border border-orange-200 dark:border-[#FD5202]/40 text-[#FD5202] flex items-center justify-center shrink-0 mt-0.5">
                   <Check className="w-4 h-4" />
@@ -294,15 +326,15 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
         {/* Conversion Registration Form powered by React Hook Form */}
         <section
           id="campaign-registration-box"
-          className="rounded-3xl border border-slate-200 dark:border-[#FD5202]/40 bg-white dark:bg-gradient-to-b dark:from-[#091A42] dark:to-[#060F26] p-6 sm:p-10 shadow-xl relative overflow-hidden"
+          className="rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-[#FD5202]/40 bg-white dark:bg-gradient-to-b dark:from-[#091A42] dark:to-[#060F26] p-4 sm:p-10 shadow-xl relative overflow-hidden"
         >
-          <div className="relative z-10 max-w-3xl mx-auto space-y-8">
+          <div className="relative z-10 max-w-3xl mx-auto space-y-6 sm:space-y-8">
             <div className="text-center space-y-2">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-[11px] sm:text-xs font-bold">
                 <Clock className="w-3.5 h-3.5" />
                 <span>{isRtl ? 'ثبت‌نام سریع با اولویت رسیدگی' : 'Priority Processing'}</span>
               </div>
-              <h3 className="text-2xl sm:text-3xl font-black text-[#091A42] dark:text-white">
+              <h3 className="text-xl sm:text-3xl font-black text-[#091A42] dark:text-white">
                 {isRtl ? campaign.registrationTitleFa : campaign.registrationTitleEn}
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl mx-auto leading-relaxed">
@@ -457,15 +489,35 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-4">
+                {submitNotice && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitNotice}</span>
+                  </p>
+                )}
+
+                <div className="pt-3 sm:pt-4">
                   <motion.button
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2.5 py-4 px-6 rounded-2xl text-sm sm:text-base font-black text-white bg-[#FD5202] hover:bg-[#E04600] shadow-lg shadow-orange-500/25 transition-all cursor-pointer"
+                    disabled={submitting}
+                    className="w-full min-h-[48px] flex items-center justify-center gap-2.5 py-3.5 sm:py-4 px-4 sm:px-6 rounded-2xl text-xs sm:text-base font-black text-white bg-[#FD5202] hover:bg-[#E04600] shadow-lg shadow-orange-500/25 transition-all cursor-pointer disabled:opacity-60 text-center"
                   >
-                    <Send className="w-5 h-5" />
-                    <span>{isRtl ? 'ثبت نهایی درخواست و رزرو اولویت تخفیف' : 'Submit & Secure Your Priority Spot'}</span>
+                    {user ? (
+                      <Send className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+                    ) : (
+                      <GoogleBrandIcon className="w-4 h-4 sm:w-5 sm:h-5 bg-white rounded-full p-0.5 shrink-0" />
+                    )}
+                    <span>
+                      {user
+                        ? isRtl
+                          ? 'ثبت نهایی درخواست و رزرو اولویت تخفیف'
+                          : 'Submit & Secure Your Priority Spot'
+                        : isRtl
+                        ? 'ورود با گوگل و ثبت‌نام قطعی در کمپین'
+                        : 'Sign in with Google & Register'}
+                    </span>
                   </motion.button>
                   <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 mt-2.5">
                     {isRtl

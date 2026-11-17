@@ -10,12 +10,22 @@ import {
   CampaignLanding,
   CampaignInquiry,
   BrandAsset,
+  BrandAssetCategory,
   NavLinkItem,
+  Department,
+  SiteSectionsConfig,
 } from '../types';
 import { translations } from '../utils/i18n';
+import {
+  ASSET_CATEGORIES,
+  getAssetCategoryLabel,
+  isImageAssetUrl,
+  formatAssetBytes,
+} from '../utils/assetCategories';
 import { AdminAnalyticsCharts } from './AdminAnalyticsCharts';
 import { NavigationManager } from './NavigationManager';
 import { RcgLogo } from './RcgLogo';
+import { GalleryPickerModal } from './GalleryPickerModal';
 import {
   InstagramBrandIcon,
   LinkedInBrandIcon,
@@ -59,6 +69,7 @@ import {
   Sun,
   MousePointerClick,
   Palette,
+  FolderOpen,
 } from 'lucide-react';
 import {
   Disc as PhosphorDisc,
@@ -70,6 +81,7 @@ import {
 export type AdminTab =
   | 'overview'
   | 'campaigns'
+  | 'departments'
   | 'catalog'
   | 'sharpening'
   | 'inquiries'
@@ -90,6 +102,10 @@ interface AdminDashboardProps {
   initialTab?: AdminTab;
   heroSlides: HeroSlide[];
   onUpdateSlides: (slides: HeroSlide[]) => void;
+  departments: Department[];
+  onUpdateDepartments: (depts: Department[]) => void;
+  sectionsConfig: SiteSectionsConfig;
+  onUpdateSectionsConfig: (config: SiteSectionsConfig) => void;
   products: Product[];
   onUpdateProducts: (products: Product[]) => void;
   sharpeningOrders: SharpeningOrder[];
@@ -104,6 +120,7 @@ interface AdminDashboardProps {
   onUpdateCampaignInquiries: (inquiries: CampaignInquiry[]) => void;
   brandAssets: BrandAsset[];
   onUpdateBrandAssets: (assets: BrandAsset[]) => void;
+  onArchiveAsset: (asset: Omit<BrandAsset, 'id' | 'uploadedAt'>) => void;
   onPreviewCampaign: (campaign: CampaignLanding) => void;
   navLinks: NavLinkItem[];
   onUpdateNavLinks: (links: NavLinkItem[]) => void;
@@ -130,6 +147,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   initialTab = 'overview',
   heroSlides,
   onUpdateSlides,
+  departments,
+  onUpdateDepartments,
+  sectionsConfig,
+  onUpdateSectionsConfig,
   products,
   onUpdateProducts,
   sharpeningOrders,
@@ -144,6 +165,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateCampaignInquiries,
   brandAssets,
   onUpdateBrandAssets,
+  onArchiveAsset,
   onPreviewCampaign,
   navLinks,
   onUpdateNavLinks,
@@ -164,14 +186,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isAddingCampaign, setIsAddingCampaign] = useState(false);
   const [campaignInquiryFilter, setCampaignInquiryFilter] = useState<string>('all');
 
-  // Brand Asset upload state
+  // Departments & Section Photos tab
+  const [activeDeptTabIdx, setActiveDeptTabIdx] = useState(0);
+
+  // Brand Asset upload & Gallery archive filter state
+  const [assetCategoryFilter, setAssetCategoryFilter] = useState<BrandAssetCategory | 'all'>('all');
+  const [assetSearch, setAssetSearch] = useState('');
   const [isAddingAsset, setIsAddingAsset] = useState(false);
   const [newAssetTitleFa, setNewAssetTitleFa] = useState('');
   const [newAssetTitleEn, setNewAssetTitleEn] = useState('');
-  const [newAssetCategory, setNewAssetCategory] = useState<BrandAsset['category']>('catalog');
+  const [newAssetCategory, setNewAssetCategory] = useState<BrandAssetCategory>('catalog');
   const [newAssetUrl, setNewAssetUrl] = useState('');
   const [newAssetFileSize, setNewAssetFileSize] = useState('');
   const [newAssetFileType, setNewAssetFileType] = useState('');
+
+  // Shared Gallery Picker modal state
+  const [galleryPicker, setGalleryPicker] = useState<{
+    category: BrandAssetCategory | 'all';
+    onPick: (url: string) => void;
+  } | null>(null);
 
   // Editing modals
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -181,6 +214,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Settings draft
   const [localSettings, setLocalSettings] = useState<SiteSettings>({ ...settings });
+  const [settingsLogoMode, setSettingsLogoMode] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
     if (initialTab) {
@@ -202,16 +236,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // --- Shared Local File Reader helper ---
+  // --- Shared Local File Reader + Auto-Archiving into Categorized Gallery ---
   const handleReadFileAsDataUrl = (
     file: File | undefined,
-    onLoaded: (dataUrl: string, file: File) => void
+    onLoaded: (dataUrl: string, file: File) => void,
+    archiveMeta?: { category: BrandAssetCategory; label: string }
   ) => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        onLoaded(reader.result, file);
+        const dataUrl = reader.result;
+        onLoaded(dataUrl, file);
+        if (archiveMeta) {
+          const cleanName = file.name.replace(/\.[^/.]+$/, '');
+          onArchiveAsset({
+            titleFa: `${archiveMeta.label} — ${cleanName}`,
+            titleEn: `${cleanName} (${archiveMeta.category})`,
+            category: archiveMeta.category,
+            url: dataUrl,
+            fileSize: formatAssetBytes(file.size),
+            fileType: file.type
+              ? `${file.type.replace('image/', '').toUpperCase()} Image`
+              : 'Uploaded Image',
+          });
+        }
       }
     };
     reader.readAsDataURL(file);
@@ -710,6 +759,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </span>
           </button>
 
+          <button onClick={() => setActiveTab('departments')} className={navBtnClass('departments')}>
+            <div className="flex items-center gap-2.5">
+              <Layers className="w-4 h-4 shrink-0 text-[#144AE0] dark:text-[#A6D6FE]" />
+              <span>{isRtl ? '۴ رکن و تصاویر بخش‌ها' : '4 Pillars & Photos'}</span>
+            </div>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-black/10 dark:bg-white/10 tabular-nums">
+              {departments.length}
+            </span>
+          </button>
+
           <button onClick={() => setActiveTab('catalog')} className={navBtnClass('catalog')}>
             <div className="flex items-center gap-2.5">
               <PhosphorToolbox weight="duotone" className="w-4 h-4 shrink-0" />
@@ -1156,126 +1215,538 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* TAB 3: BRAND ASSETS & FILE UPLOAD REPOSITORY */}
-          {activeTab === 'assets' && (
-            <div className="space-y-8 max-w-6xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-[#144AE0] text-white">
-                      <FolderDown className="w-5 h-5" />
-                    </span>
-                    <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">{t.tabAssets}</h2>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-300 mt-1">
-                    {isRtl
-                      ? 'آپلود مستقیم فایل‌های هویت بصری برند RCG، لوگوها، پوسترها و اسناد PDF'
-                      : 'Upload and manage RCG brand identity files, logos, posters, and PDF manuals.'}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => setIsAddingAsset(true)}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-[#144AE0] hover:bg-blue-700 shadow-sm transition-all cursor-pointer"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>{isRtl ? 'آپلود و ثبت فایل جدید' : 'Upload New Asset'}</span>
-                </button>
+          {/* TAB: FOUR PILLARS DEPARTMENTS & SECTION IMAGES */}
+          {activeTab === 'departments' && (
+            <div className="space-y-6 max-w-6xl">
+              <div>
+                <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">
+                  {isRtl ? 'مدیریت چهار رکن خدمات یکپارچه و تصاویر بخش‌ها' : '4 Service Pillars & Section Media Management'}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {isRtl
+                    ? 'ویرایش کامل ۴ کارت اصلی رکن‌ها، تصاویر ۳ کارت زیرمجموعه هر رکن، بنر انتهایی و تصاویر بخش‌های محاسبه‌گر و درباره آرسی'
+                    : 'Customize all 4 service pillars, their 3 nested sub-card photos/titles, bottom callouts, and section photos.'}
+                </p>
               </div>
 
-              {/* Brand Identity Quick Palette Reference */}
-              <div className={`${cardClass} p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#FD5202]" />
-                    <h4 className="text-sm font-extrabold text-[#091A42] dark:text-white">
-                      {isRtl ? 'پالت رسمی رنگ‌ها و قوانین هویت بصری برند RCG' : 'Official RCG Brand Palette'}
-                    </h4>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-300">
-                    {isRtl
-                      ? 'آبی آکسفورد (#091A42) · آبی تند (#144AE0) · نارنجی هویت (#FD5202) · آبی یخی (#A6D6FE)'
-                      : 'Oxford Blue (#091A42) · Vivid Blue (#144AE0) · Brand Orange (#FD5202) · Ice Blue (#A6D6FE)'}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-lg bg-[#091A42] border border-slate-300 dark:border-white/20" title="#091A42" />
-                  <span className="w-7 h-7 rounded-lg bg-[#144AE0] border border-slate-300 dark:border-white/20" title="#144AE0" />
-                  <span className="w-7 h-7 rounded-lg bg-[#FD5202] border border-slate-300 dark:border-white/20" title="#FD5202" />
-                  <span className="w-7 h-7 rounded-lg bg-[#A6D6FE] border border-slate-300 dark:border-white/20" title="#A6D6FE" />
-                </div>
+              {/* Pillar Selector */}
+              <div className="flex flex-wrap items-center gap-2">
+                {departments.map((dept, idx) => (
+                  <button
+                    key={dept.id}
+                    type="button"
+                    onClick={() => setActiveDeptTabIdx(idx)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                      activeDeptTabIdx === idx
+                        ? 'bg-[#144AE0] text-white border-[#144AE0] shadow-sm'
+                        : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-blue-900'
+                    }`}
+                  >
+                    0{idx + 1} · {isRtl ? dept.titleFa : dept.titleEn}
+                  </button>
+                ))}
               </div>
 
-              {/* Assets Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {brandAssets.map((asset) => {
-                  const isImageAsset =
-                    asset.url.startsWith('data:image/') ||
-                    !!asset.url.match(/\.(png|jpg|jpeg|webp|svg)$/i);
+              {(() => {
+                const currentDept = departments[activeDeptTabIdx] || departments[0];
+                if (!currentDept) return null;
 
-                  return (
-                    <div
-                      key={asset.id}
-                      className={`${cardClass} p-5 hover:border-blue-400 dark:hover:border-blue-700/60 transition-all space-y-4 flex flex-col justify-between`}
-                    >
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE]">
-                            {asset.category}
-                          </span>
-                          <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 tabular-nums">
-                            {asset.fileSize}
-                          </span>
-                        </div>
+                const updateCurrentDept = (patch: Partial<Department>) => {
+                  onUpdateDepartments(
+                    departments.map((d, i) => (i === activeDeptTabIdx ? { ...d, ...patch } : d))
+                  );
+                };
 
-                        <div>
-                          <h4 className="text-sm font-bold text-[#091A42] dark:text-white leading-snug">
-                            {isRtl ? asset.titleFa : asset.titleEn}
-                          </h4>
-                          <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-1">
-                            {asset.fileType} · {asset.uploadedAt}
-                          </p>
-                        </div>
+                return (
+                  <div className={`${cardClass} p-6 space-y-6`}>
+                    {/* Live Header Preview strip of Pillar Card (showing synchronized RcgLogo) */}
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 flex items-center justify-between gap-4">
+                      <RcgLogo
+                        settings={localSettings}
+                        isDark={isDark}
+                        surface="auto"
+                        heightScale={0.78}
+                        showSubtitle={false}
+                      />
+                      <span className="text-[11px] font-bold text-[#144AE0] dark:text-[#A6D6FE]">
+                        {isRtl
+                          ? 'لوگوی این ۴ کارت به صورت خودکار با تنظیمات لوگوی سایت هماهنگ است'
+                          : 'Pillar logo syncs automatically with global Light/Dark logo settings'}
+                      </span>
+                    </div>
 
-                        {isImageAsset ? (
-                          <div className="h-32 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-blue-900/40">
-                            <img src={asset.url} alt="" className="w-full h-full object-contain p-2" />
-                          </div>
-                        ) : (
-                          <div className="h-32 rounded-xl bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-blue-900/40 flex flex-col items-center justify-center gap-2 text-slate-500 dark:text-slate-400">
-                            <FileText className="w-8 h-8 text-[#FD5202]" />
-                            <span className="text-xs font-mono">{asset.fileType}</span>
-                          </div>
-                        )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'عنوان رکن (فارسی)' : 'Pillar Title (Fa)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={currentDept.titleFa}
+                          onChange={(e) => updateCurrentDept({ titleFa: e.target.value })}
+                          className={inputClass}
+                        />
                       </div>
-
-                      <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-blue-900/50">
-                        <a
-                          href={asset.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          download
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-[#144AE0] dark:bg-[#144AE0]/20 dark:hover:bg-[#144AE0] border border-blue-200 dark:border-blue-800 text-xs font-bold text-[#144AE0] hover:text-white dark:text-white transition-colors"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>{isRtl ? 'دانلود فایل' : 'Download'}</span>
-                        </a>
-
-                        <button
-                          onClick={() => handleDeleteAsset(asset.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                          title={t.delete}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'عنوان رکن (انگلیسی)' : 'Pillar Title (En)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={currentDept.titleEn}
+                          onChange={(e) => updateCurrentDept({ titleEn: e.target.value })}
+                          className={inputClass}
+                        />
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {/* Main Department Banner Image */}
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-3">
+                      <label className="text-xs font-bold text-[#091A42] dark:text-white block">
+                        {isRtl ? 'تصویر اصلی کارت رکن' : 'Main Pillar Banner Image'}
+                      </label>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                        <img
+                          src={currentDept.image}
+                          alt=""
+                          className="w-full sm:w-36 h-24 rounded-xl object-cover border border-slate-200 dark:border-blue-800 shrink-0"
+                        />
+                        <div className="flex-1 w-full space-y-2">
+                          <input
+                            type="text"
+                            value={currentDept.image}
+                            onChange={(e) => updateCurrentDept({ image: e.target.value })}
+                            className={`${inputClass} font-mono`}
+                            dir="ltr"
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{isRtl ? 'آپلود تصویر (بایگانی خودکار)' : 'Upload & Archive'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  handleReadFileAsDataUrl(
+                                    e.target.files?.[0],
+                                    (dataUrl) => updateCurrentDept({ image: dataUrl }),
+                                    { category: 'departments', label: currentDept.titleFa }
+                                  );
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setGalleryPicker({
+                                  category: 'departments',
+                                  onPick: (url) => updateCurrentDept({ image: url }),
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#091A42] border border-slate-300 dark:border-blue-800 text-xs font-bold cursor-pointer"
+                            >
+                              <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+                              <span>{isRtl ? 'انتخاب از گالری' : 'Pick from Gallery'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3 Nested Sub-Cards Editor */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-black text-[#144AE0] dark:text-[#A6D6FE]">
+                        {isRtl ? 'زیرکارت‌های ۳گانه این رکن (تصویر و عنوان)' : '3 Nested Sub-Cards (Title & Photo)'}
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {currentDept.subCards.map((sc, sIdx) => (
+                          <div
+                            key={sIdx}
+                            className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-3"
+                          >
+                            <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-blue-800">
+                              <img
+                                src={sc.image}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                            <input
+                              type="text"
+                              value={sc.titleFa}
+                              onChange={(e) =>
+                                updateCurrentDept({
+                                  subCards: currentDept.subCards.map((c, ci) =>
+                                    ci === sIdx ? { ...c, titleFa: e.target.value } : c
+                                  ),
+                                })
+                              }
+                              placeholder="عنوان فارسی زیرکارت..."
+                              className={inputClass}
+                            />
+                            <input
+                              type="text"
+                              value={sc.titleEn}
+                              onChange={(e) =>
+                                updateCurrentDept({
+                                  subCards: currentDept.subCards.map((c, ci) =>
+                                    ci === sIdx ? { ...c, titleEn: e.target.value } : c
+                                  ),
+                                })
+                              }
+                              placeholder="English Title..."
+                              className={inputClass}
+                            />
+                            <input
+                              type="text"
+                              value={sc.image}
+                              onChange={(e) =>
+                                updateCurrentDept({
+                                  subCards: currentDept.subCards.map((c, ci) =>
+                                    ci === sIdx ? { ...c, image: e.target.value } : c
+                                  ),
+                                })
+                              }
+                              className={`${inputClass} font-mono`}
+                              dir="ltr"
+                            />
+                            <div className="flex items-center gap-1.5">
+                              <label className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#144AE0] hover:bg-blue-700 text-white text-[11px] font-bold cursor-pointer">
+                                <Upload className="w-3 h-3" />
+                                <span>{isRtl ? 'آپلود' : 'Upload'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    handleReadFileAsDataUrl(
+                                      e.target.files?.[0],
+                                      (dataUrl) =>
+                                        updateCurrentDept({
+                                          subCards: currentDept.subCards.map((c, ci) =>
+                                            ci === sIdx ? { ...c, image: dataUrl } : c
+                                          ),
+                                        }),
+                                      { category: 'departments', label: sc.titleFa }
+                                    );
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setGalleryPicker({
+                                    category: 'departments',
+                                    onPick: (url) =>
+                                      updateCurrentDept({
+                                        subCards: currentDept.subCards.map((c, ci) =>
+                                          ci === sIdx ? { ...c, image: url } : c
+                                        ),
+                                      }),
+                                  })
+                                }
+                                className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#091A42] border border-slate-300 dark:border-blue-800 text-[11px] font-bold cursor-pointer"
+                              >
+                                <FolderOpen className="w-3 h-3 text-[#FD5202]" />
+                                <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Section Showcase Images (Calculator + About + Hero Backdrop) */}
+                    <div className="pt-4 border-t border-slate-200 dark:border-blue-900/60 space-y-3">
+                      <h4 className="text-xs font-black text-[#091A42] dark:text-white">
+                        {isRtl
+                          ? 'سایر تصاویر کلیدی بخش‌های سایت (محاسبه‌گر تیزکاری و درباره آرسی)'
+                          : 'Other Site Section Showcase Images (Calculator & About)'}
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(['calculator', 'about'] as const).map((secKey) => (
+                          <div
+                            key={secKey}
+                            className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-2.5"
+                          >
+                            <span className="text-xs font-bold block text-[#144AE0] dark:text-[#A6D6FE]">
+                              {secKey === 'calculator'
+                                ? isRtl
+                                  ? 'تصویر بخش محاسبه‌گر تیزکاری'
+                                  : 'Calculator Section Photo'
+                                : isRtl
+                                ? 'تصویر بخش درباره گروه صنعتی آرسی'
+                                : 'About RCG Section Photo'}
+                            </span>
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={sectionsConfig[secKey]?.image || ''}
+                                alt=""
+                                className="w-20 h-14 rounded-lg object-cover border border-slate-300 dark:border-blue-800 shrink-0"
+                              />
+                              <div className="flex-1 space-y-1.5">
+                                <input
+                                  type="text"
+                                  value={sectionsConfig[secKey]?.image || ''}
+                                  onChange={(e) =>
+                                    onUpdateSectionsConfig({
+                                      ...sectionsConfig,
+                                      [secKey]: {
+                                        ...sectionsConfig[secKey],
+                                        image: e.target.value,
+                                      },
+                                    })
+                                  }
+                                  className={`${inputClass} font-mono`}
+                                  dir="ltr"
+                                />
+                                <div className="flex items-center gap-1.5">
+                                  <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#144AE0] text-white text-[11px] font-bold cursor-pointer">
+                                    <Upload className="w-3 h-3" />
+                                    <span>{isRtl ? 'آپلود' : 'Upload'}</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        handleReadFileAsDataUrl(
+                                          e.target.files?.[0],
+                                          (dataUrl) =>
+                                            onUpdateSectionsConfig({
+                                              ...sectionsConfig,
+                                              [secKey]: {
+                                                ...sectionsConfig[secKey],
+                                                image: dataUrl,
+                                              },
+                                            }),
+                                          {
+                                            category: 'photo',
+                                            label: secKey === 'calculator' ? 'تصویر بخش تیزکاری' : 'تصویر درباره آرسی',
+                                          }
+                                        );
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setGalleryPicker({
+                                        category: 'photo',
+                                        onPick: (url) =>
+                                          onUpdateSectionsConfig({
+                                            ...sectionsConfig,
+                                            [secKey]: {
+                                              ...sectionsConfig[secKey],
+                                              image: url,
+                                            },
+                                          }),
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-[#091A42] border border-slate-300 dark:border-blue-800 text-[11px] font-bold cursor-pointer"
+                                  >
+                                    <FolderOpen className="w-3 h-3 text-[#FD5202]" />
+                                    <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
+
+          {/* TAB 3: BRAND ASSETS & CATEGORIZED GALLERY ARCHIVE */}
+          {activeTab === 'assets' && (() => {
+            const q = assetSearch.trim().toLowerCase();
+            const filteredAssets = brandAssets.filter((a) => {
+              const matchesCategory = assetCategoryFilter === 'all' || a.category === assetCategoryFilter;
+              const matchesSearch =
+                !q ||
+                a.titleFa.toLowerCase().includes(q) ||
+                a.titleEn.toLowerCase().includes(q) ||
+                a.fileType.toLowerCase().includes(q);
+              return matchesCategory && matchesSearch;
+            });
+
+            return (
+              <div className="space-y-6 max-w-6xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="p-1.5 rounded-lg bg-[#144AE0] text-white">
+                        <FolderDown className="w-5 h-5" />
+                      </span>
+                      <h2 className="text-xl font-extrabold text-[#091A42] dark:text-white">
+                        {isRtl ? 'گالری دسته‌بندی‌شده و بایگانی هویت بصری برند' : t.tabAssets}
+                      </h2>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-300 mt-1">
+                      {isRtl
+                        ? 'تمامی تصاویر آپلودشده در هر بخش سایت به صورت خودکار بر اساس دسته‌بندی در این گالری بایگانی و قابل انتخاب مجدد هستند'
+                        : 'All uploaded logos, pillar cards, machinery, campaign banners, and PDFs are archived by category.'}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setIsAddingAsset(true)}
+                    className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-[#144AE0] hover:bg-blue-700 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>{isRtl ? 'آپلود و ثبت در گالری' : 'Upload New Asset'}</span>
+                  </button>
+                </div>
+
+                {/* Search + Category Filter Tabs */}
+                <div className={`${cardClass} p-4 space-y-3`}>
+                  <div className="flex flex-col md:flex-row items-center gap-3">
+                    <div className="relative flex-1 w-full">
+                      <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 rtl:right-3 ltr:left-3 text-slate-400" />
+                      <input
+                        type="text"
+                        value={assetSearch}
+                        onChange={(e) => setAssetSearch(e.target.value)}
+                        placeholder={isRtl ? 'جستجو در گالری تصاویر و فایل‌ها...' : 'Search gallery titles or file types...'}
+                        className="w-full bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/80 rounded-xl rtl:pr-9 ltr:pl-9 py-2 text-xs text-slate-900 dark:text-white focus:border-[#FD5202] focus:outline-none"
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-[#144AE0] dark:text-[#A6D6FE] tabular-nums shrink-0">
+                      {isRtl ? `${filteredAssets.length} فایل در دسترس` : `${filteredAssets.length} items`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    <button
+                      type="button"
+                      onClick={() => setAssetCategoryFilter('all')}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap cursor-pointer border ${
+                        assetCategoryFilter === 'all'
+                          ? 'bg-[#144AE0] text-white border-[#144AE0]'
+                          : 'bg-slate-100 dark:bg-[#060F26] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                      }`}
+                    >
+                      {isRtl ? `همه دسته‌ها (${brandAssets.length})` : `All (${brandAssets.length})`}
+                    </button>
+
+                    {ASSET_CATEGORIES.map((cat) => {
+                      const count = brandAssets.filter((a) => a.category === cat.id).length;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setAssetCategoryFilter(cat.id)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap cursor-pointer border ${
+                            assetCategoryFilter === cat.id
+                              ? 'bg-[#FD5202] text-white border-[#FD5202]'
+                              : 'bg-slate-100 dark:bg-[#060F26] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                          }`}
+                        >
+                          {isRtl ? cat.labelFa : cat.labelEn} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Assets Grid */}
+                {filteredAssets.length === 0 ? (
+                  <div className={`${cardClass} p-10 text-center text-xs text-slate-500 dark:text-slate-400`}>
+                    {isRtl ? 'هیچ تصویری در این دسته‌بندی یافت نشد.' : 'No assets found in this category.'}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredAssets.map((asset) => {
+                      const isImage = isImageAssetUrl(asset.url);
+
+                      return (
+                        <div
+                          key={asset.id}
+                          className={`${cardClass} p-5 hover:border-blue-400 dark:hover:border-blue-700/60 transition-all space-y-4 flex flex-col justify-between`}
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <select
+                                value={asset.category}
+                                onChange={(e) => {
+                                  const nextCat = e.target.value as BrandAssetCategory;
+                                  onUpdateBrandAssets(
+                                    brandAssets.map((a) =>
+                                      a.id === asset.id ? { ...a, category: nextCat } : a
+                                    )
+                                  );
+                                  showToast(isRtl ? 'دسته‌بندی تصویر تغییر یافت' : 'Category updated');
+                                }}
+                                className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-[#144AE0] dark:text-[#A6D6FE] cursor-pointer focus:outline-none"
+                              >
+                                {ASSET_CATEGORIES.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {isRtl ? c.labelFa : c.labelEn}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 tabular-nums">
+                                {asset.fileSize}
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="text-sm font-bold text-[#091A42] dark:text-white leading-snug line-clamp-2">
+                                {isRtl ? asset.titleFa : asset.titleEn}
+                              </h4>
+                              <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-1">
+                                {asset.fileType} · {asset.uploadedAt}
+                              </p>
+                            </div>
+
+                            {isImage ? (
+                              <div className="h-36 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-blue-900/40">
+                                <img src={asset.url} alt="" className="w-full h-full object-contain p-1.5" />
+                              </div>
+                            ) : (
+                              <div className="h-36 rounded-xl bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-blue-900/40 flex flex-col items-center justify-center gap-2 text-slate-500 dark:text-slate-400">
+                                <FileText className="w-8 h-8 text-[#FD5202]" />
+                                <span className="text-xs font-mono">{asset.fileType}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-blue-900/50">
+                            <a
+                              href={asset.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              download
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-[#144AE0] dark:bg-[#144AE0]/20 dark:hover:bg-[#144AE0] border border-blue-200 dark:border-blue-800 text-xs font-bold text-[#144AE0] hover:text-white dark:text-white transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>{isRtl ? 'دانلود' : 'Download'}</span>
+                            </a>
+
+                            <button
+                              onClick={() => handleDeleteAsset(asset.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                              title={t.delete}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* TAB 4: SHARPENING ORDERS */}
           {activeTab === 'sharpening' && (
@@ -1942,9 +2413,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100 dark:border-blue-900/50">
                       <div className="space-y-1">
                         <label className="text-xs text-slate-600 dark:text-slate-400">
-                          {isRtl ? 'تصویر اسلاید (آدرس یا آپلود)' : 'Slide Image'}
+                          {isRtl ? 'تصویر اسلاید (آدرس، آپلود یا گالری)' : 'Slide Image'}
                         </label>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <input
                             type="text"
                             value={slide.image}
@@ -1961,13 +2432,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               type="file"
                               accept="image/*"
                               className="hidden"
-                              onChange={(e) =>
-                                handleReadFileAsDataUrl(e.target.files?.[0], (dataUrl) =>
-                                  onUpdateSlides(heroSlides.map((s) => (s.id === slide.id ? { ...s, image: dataUrl } : s)))
-                                )
-                              }
+                              onChange={(e) => {
+                                handleReadFileAsDataUrl(
+                                  e.target.files?.[0],
+                                  (dataUrl) =>
+                                    onUpdateSlides(
+                                      heroSlides.map((s) => (s.id === slide.id ? { ...s, image: dataUrl } : s))
+                                    ),
+                                  { category: 'hero', label: `اسلاید ${idx + 1}` }
+                                );
+                                e.target.value = '';
+                              }}
                             />
                           </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGalleryPicker({
+                                category: 'hero',
+                                onPick: (url) =>
+                                  onUpdateSlides(
+                                    heroSlides.map((s) => (s.id === slide.id ? { ...s, image: url } : s))
+                                  ),
+                              })
+                            }
+                            className="flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 text-xs font-bold cursor-pointer shrink-0"
+                          >
+                            <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+                            <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                          </button>
                         </div>
                       </div>
 
@@ -2068,68 +2561,250 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Live Logo Preview Strip */}
-                  <div className="p-4 rounded-xl bg-white dark:bg-[#091A42] border border-slate-200 dark:border-blue-800 flex items-center justify-between gap-4">
-                    <RcgLogo
-                      variant={localSettings.logoVariant || 'color'}
-                      height={localSettings.logoHeight || 36}
-                      showSubtitle={localSettings.logoShowSubtitle !== false}
-                      subtitleType={isRtl ? 'fa' : 'en'}
-                      logoType={localSettings.logoType || 'vector'}
-                      customLogoUrl={localSettings.customLogoUrl}
-                      primaryColor={localSettings.logoPrimaryColor || '#144AE0'}
-                      secondaryColor={localSettings.logoSecondaryColor || '#091A42'}
-                      accentColor={localSettings.logoAccentColor || '#FD5202'}
-                      companyNameFa={localSettings.companyNameFa}
-                      sloganFa={localSettings.sloganFa}
-                    />
-                    <span className="px-3.5 py-2 rounded-xl bg-[#FD5202] text-white text-xs font-bold shrink-0">
-                      {isRtl ? localSettings.headerCtaTextFa || 'درخواست مشاوره و قیمت' : localSettings.headerCtaTextEn || 'Request Quote'}
-                    </span>
+                  {/* Dual Light & Dark Surface Live Preview Strip */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-4 rounded-xl bg-white border border-slate-200 text-slate-900 space-y-2">
+                      <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                        <Sun className="w-3.5 h-3.5 text-amber-500" />
+                        <span>{isRtl ? 'نمایش در تم روشن / کارت‌های سفید' : 'Light Mode / Surface'}</span>
+                      </span>
+                      <RcgLogo
+                        settings={localSettings}
+                        surface="light"
+                        subtitleType={isRtl ? 'fa' : 'en'}
+                      />
+                    </div>
+                    <div className="p-4 rounded-xl bg-[#060F26] border border-blue-800 text-white space-y-2">
+                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                        <Moon className="w-3.5 h-3.5 text-[#A6D6FE]" />
+                        <span>{isRtl ? 'نمایش در تم دارک / فوتر تیره' : 'Dark Mode / Footer BG'}</span>
+                      </span>
+                      <RcgLogo
+                        settings={localSettings}
+                        surface="dark"
+                        subtitleType={isRtl ? 'fa' : 'en'}
+                      />
+                    </div>
                   </div>
 
-                  {localSettings.logoType === 'custom' ? (
-                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                  {/* Mode Switcher Tabs: Light vs Dark Logo Customization */}
+                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-blue-900/60 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => setSettingsLogoMode('light')}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                        settingsLogoMode === 'light'
+                          ? 'bg-amber-500 text-white border-amber-500'
+                          : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-800'
+                      }`}
+                    >
+                      <Sun className="w-3.5 h-3.5" />
+                      <span>{isRtl ? 'تنظیمات پس‌زمینه روشن (Light)' : 'Light Theme / Surface'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsLogoMode('dark')}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                        settingsLogoMode === 'dark'
+                          ? 'bg-[#091A42] text-[#A6D6FE] border-blue-500'
+                          : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-800'
+                      }`}
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                      <span>{isRtl ? 'تنظیمات پس‌زمینه تیره / دارک (Dark)' : 'Dark Theme / Footer BG'}</span>
+                    </button>
+                  </div>
+
+                  {settingsLogoMode === 'light' ? (
+                    localSettings.logoType === 'custom' ? (
+                      <div className="flex flex-col sm:flex-row items-center gap-2">
+                        <input
+                          type="text"
+                          value={localSettings.customLogoUrl || ''}
+                          onChange={(e) => setLocalSettings({ ...localSettings, customLogoUrl: e.target.value })}
+                          placeholder="آدرس لوگوی حالت روشن..."
+                          className={`${inputClass} flex-1 font-mono`}
+                          dir="ltr"
+                        />
+                        <label className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer shrink-0">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'آپلود لوگوی روشن' : 'Upload Light Logo'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              handleReadFileAsDataUrl(
+                                e.target.files?.[0],
+                                (dataUrl) =>
+                                  setLocalSettings({ ...localSettings, customLogoUrl: dataUrl, logoType: 'custom' }),
+                                { category: 'logo', label: 'لوگوی حالت روشن' }
+                              );
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setGalleryPicker({
+                              category: 'logo',
+                              onPick: (url) =>
+                                setLocalSettings({ ...localSettings, customLogoUrl: url, logoType: 'custom' }),
+                            })
+                          }
+                          className="flex items-center gap-1 px-3 py-2 rounded-xl bg-white dark:bg-[#091A42] border border-slate-300 dark:border-blue-800 text-xs font-bold cursor-pointer"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+                          <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'رنگ اصلی (روشن)' : 'Primary (Light)'}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="color"
+                              value={localSettings.logoPrimaryColor || '#144AE0'}
+                              onChange={(e) => setLocalSettings({ ...localSettings, logoPrimaryColor: e.target.value })}
+                              className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={localSettings.logoPrimaryColor || '#144AE0'}
+                              onChange={(e) => setLocalSettings({ ...localSettings, logoPrimaryColor: e.target.value })}
+                              className={`${inputClass} font-mono`}
+                              dir="ltr"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'رنگ حروف (روشن)' : 'Letters (Light)'}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="color"
+                              value={localSettings.logoSecondaryColor || '#091A42'}
+                              onChange={(e) => setLocalSettings({ ...localSettings, logoSecondaryColor: e.target.value })}
+                              className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={localSettings.logoSecondaryColor || '#091A42'}
+                              onChange={(e) => setLocalSettings({ ...localSettings, logoSecondaryColor: e.target.value })}
+                              className={`${inputClass} font-mono`}
+                              dir="ltr"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'رنگ تاکیدی (روشن)' : 'Accent (Light)'}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="color"
+                              value={localSettings.logoAccentColor || '#FD5202'}
+                              onChange={(e) => setLocalSettings({ ...localSettings, logoAccentColor: e.target.value })}
+                              className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={localSettings.logoAccentColor || '#FD5202'}
+                              onChange={(e) => setLocalSettings({ ...localSettings, logoAccentColor: e.target.value })}
+                              className={`${inputClass} font-mono`}
+                              dir="ltr"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {isRtl ? 'حالت رنگ (روشن)' : 'Light Variant'}
+                          </label>
+                          <select
+                            value={localSettings.logoVariant || 'color'}
+                            onChange={(e) =>
+                              setLocalSettings({
+                                ...localSettings,
+                                logoVariant: e.target.value as 'color' | 'dark' | 'light',
+                              })
+                            }
+                            className={inputClass}
+                          >
+                            <option value="color">{isRtl ? 'تمام‌رنگی رسمی' : 'Brand Color'}</option>
+                            <option value="dark">{isRtl ? 'تک‌رنگ تیره' : 'Monochrome Dark'}</option>
+                            <option value="light">{isRtl ? 'تک‌رنگ سفید' : 'Monochrome Light'}</option>
+                          </select>
+                        </div>
+                      </div>
+                    )
+                  ) : localSettings.logoType === 'custom' ? (
+                    <div className="flex flex-col sm:flex-row items-center gap-2">
                       <input
                         type="text"
-                        value={localSettings.customLogoUrl || ''}
-                        onChange={(e) => setLocalSettings({ ...localSettings, customLogoUrl: e.target.value })}
-                        placeholder="URL یا تصویر لوگوی آپلود شده..."
+                        value={localSettings.customLogoDarkUrl || ''}
+                        onChange={(e) => setLocalSettings({ ...localSettings, customLogoDarkUrl: e.target.value })}
+                        placeholder="آدرس لوگوی حالت دارک / تیره..."
                         className={`${inputClass} flex-1 font-mono`}
                         dir="ltr"
                       />
-                      <label className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer shrink-0">
+                      <label className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer shrink-0">
                         <Upload className="w-3.5 h-3.5" />
-                        <span>{isRtl ? 'آپلود تصویر لوگو' : 'Upload Logo'}</span>
+                        <span>{isRtl ? 'آپلود لوگوی دارک' : 'Upload Dark Logo'}</span>
                         <input
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) =>
-                            handleReadFileAsDataUrl(e.target.files?.[0], (dataUrl) =>
-                              setLocalSettings({ ...localSettings, customLogoUrl: dataUrl, logoType: 'custom' })
-                            )
-                          }
+                          onChange={(e) => {
+                            handleReadFileAsDataUrl(
+                              e.target.files?.[0],
+                              (dataUrl) =>
+                                setLocalSettings({ ...localSettings, customLogoDarkUrl: dataUrl, logoType: 'custom' }),
+                              { category: 'logo', label: 'لوگوی حالت تاریک' }
+                            );
+                            e.target.value = '';
+                          }}
                         />
                       </label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGalleryPicker({
+                            category: 'logo',
+                            onPick: (url) =>
+                              setLocalSettings({ ...localSettings, customLogoDarkUrl: url, logoType: 'custom' }),
+                          })
+                        }
+                        className="flex items-center gap-1 px-3 py-2 rounded-xl bg-white dark:bg-[#091A42] border border-slate-300 dark:border-blue-800 text-xs font-bold cursor-pointer"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+                        <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                      </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-[#091A42] text-white">
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {isRtl ? 'رنگ اصلی لوگو' : 'Primary Logo Color'}
+                        <label className="text-xs font-semibold text-slate-200">
+                          {isRtl ? 'رنگ اصلی (دارک)' : 'Primary (Dark)'}
                         </label>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <input
                             type="color"
-                            value={localSettings.logoPrimaryColor || '#144AE0'}
-                            onChange={(e) => setLocalSettings({ ...localSettings, logoPrimaryColor: e.target.value })}
-                            className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                            value={localSettings.logoDarkPrimaryColor || '#3B82F6'}
+                            onChange={(e) => setLocalSettings({ ...localSettings, logoDarkPrimaryColor: e.target.value })}
+                            className="w-9 h-9 rounded-lg border border-blue-800 cursor-pointer shrink-0"
                           />
                           <input
                             type="text"
-                            value={localSettings.logoPrimaryColor || '#144AE0'}
-                            onChange={(e) => setLocalSettings({ ...localSettings, logoPrimaryColor: e.target.value })}
+                            value={localSettings.logoDarkPrimaryColor || '#3B82F6'}
+                            onChange={(e) => setLocalSettings({ ...localSettings, logoDarkPrimaryColor: e.target.value })}
                             className={`${inputClass} font-mono`}
                             dir="ltr"
                           />
@@ -2137,20 +2812,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {isRtl ? 'رنگ حروف لوگو' : 'Secondary Logo Color'}
+                        <label className="text-xs font-semibold text-slate-200">
+                          {isRtl ? 'رنگ حروف (دارک)' : 'Letters (Dark)'}
                         </label>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <input
                             type="color"
-                            value={localSettings.logoSecondaryColor || '#091A42'}
-                            onChange={(e) => setLocalSettings({ ...localSettings, logoSecondaryColor: e.target.value })}
-                            className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                            value={localSettings.logoDarkSecondaryColor || '#FFFFFF'}
+                            onChange={(e) => setLocalSettings({ ...localSettings, logoDarkSecondaryColor: e.target.value })}
+                            className="w-9 h-9 rounded-lg border border-blue-800 cursor-pointer shrink-0"
                           />
                           <input
                             type="text"
-                            value={localSettings.logoSecondaryColor || '#091A42'}
-                            onChange={(e) => setLocalSettings({ ...localSettings, logoSecondaryColor: e.target.value })}
+                            value={localSettings.logoDarkSecondaryColor || '#FFFFFF'}
+                            onChange={(e) => setLocalSettings({ ...localSettings, logoDarkSecondaryColor: e.target.value })}
                             className={`${inputClass} font-mono`}
                             dir="ltr"
                           />
@@ -2158,32 +2833,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {isRtl ? 'رنگ مثلث تاکیدی' : 'Accent Triangle Color'}
+                        <label className="text-xs font-semibold text-slate-200">
+                          {isRtl ? 'رنگ تاکیدی (دارک)' : 'Accent (Dark)'}
                         </label>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <input
                             type="color"
-                            value={localSettings.logoAccentColor || '#FD5202'}
-                            onChange={(e) => setLocalSettings({ ...localSettings, logoAccentColor: e.target.value })}
-                            className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                            value={localSettings.logoDarkAccentColor || '#FD5202'}
+                            onChange={(e) => setLocalSettings({ ...localSettings, logoDarkAccentColor: e.target.value })}
+                            className="w-9 h-9 rounded-lg border border-blue-800 cursor-pointer shrink-0"
                           />
                           <input
                             type="text"
-                            value={localSettings.logoAccentColor || '#FD5202'}
-                            onChange={(e) => setLocalSettings({ ...localSettings, logoAccentColor: e.target.value })}
+                            value={localSettings.logoDarkAccentColor || '#FD5202'}
+                            onChange={(e) => setLocalSettings({ ...localSettings, logoDarkAccentColor: e.target.value })}
                             className={`${inputClass} font-mono`}
                             dir="ltr"
                           />
                         </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-200">
+                          {isRtl ? 'استایل در دارک' : 'Dark Variant'}
+                        </label>
+                        <select
+                          value={localSettings.logoDarkVariant || 'color'}
+                          onChange={(e) =>
+                            setLocalSettings({
+                              ...localSettings,
+                              logoDarkVariant: e.target.value as 'color' | 'dark' | 'light',
+                            })
+                          }
+                          className={inputClass}
+                        >
+                          <option value="color">{isRtl ? 'تمام‌رنگی رسمی' : 'Brand Color'}</option>
+                          <option value="light">{isRtl ? 'تک‌رنگ سفید' : 'Monochrome Light'}</option>
+                          <option value="dark">{isRtl ? 'تک‌رنگ سفارشی' : 'Monochrome Custom'}</option>
+                        </select>
                       </div>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center pt-1">
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {isRtl ? `ارتفاع لوگو در هدر: ${localSettings.logoHeight || 36}px` : `Logo Height: ${localSettings.logoHeight || 36}px`}
+                        {isRtl ? `اندازه پایه لوگو در کل سایت: ${localSettings.logoHeight || 36}px` : `Global Logo Height: ${localSettings.logoHeight || 36}px`}
                       </label>
                       <input
                         type="range"
@@ -2193,26 +2888,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={(e) => setLocalSettings({ ...localSettings, logoHeight: Number(e.target.value) })}
                         className="w-full accent-[#FD5202]"
                       />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {isRtl ? 'استایل رنگ لوگو' : 'Logo Variant'}
-                      </label>
-                      <select
-                        value={localSettings.logoVariant || 'color'}
-                        onChange={(e) =>
-                          setLocalSettings({
-                            ...localSettings,
-                            logoVariant: e.target.value as 'color' | 'dark' | 'light',
-                          })
-                        }
-                        className={inputClass}
-                      >
-                        <option value="color">{isRtl ? 'رنگی رسمی برند (Color)' : 'Brand Color'}</option>
-                        <option value="dark">{isRtl ? 'تک‌رنگ تیره (Dark)' : 'Monochrome Dark'}</option>
-                        <option value="light">{isRtl ? 'تک‌رنگ سفید (Light)' : 'Monochrome Light'}</option>
-                      </select>
                     </div>
 
                     <label className="flex items-center gap-2 pt-3 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
@@ -2633,11 +3308,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* 4. Image Upload & URL */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-3">
+              {/* 4. Image Upload & Stations Galleries */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-4">
                 <h4 className="font-bold text-xs flex items-center gap-2 text-[#144AE0] dark:text-[#A6D6FE]">
                   <ImageIcon className="w-4 h-4 text-[#FD5202]" />
-                  <span>{isRtl ? '۴. تصویر اصلی دستگاه' : '4. Machine Image'}</span>
+                  <span>{isRtl ? '۴. تصویر اصلی و ایستگاه‌های ۴گانه دستگاه' : '4. Machine Photo & 4 Internal Stations'}</span>
                 </h4>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
@@ -2645,6 +3320,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     value={editingProduct.image}
                     onChange={(e) => setEditingProduct({ ...editingProduct, image: e.target.value })}
                     className={`${inputClass} flex-1 font-mono`}
+                    dir="ltr"
                   />
                   <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white font-bold cursor-pointer shrink-0">
                     <Upload className="w-3.5 h-3.5" />
@@ -2653,14 +3329,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) =>
-                        handleReadFileAsDataUrl(e.target.files?.[0], (dataUrl) =>
-                          setEditingProduct({ ...editingProduct, image: dataUrl })
-                        )
-                      }
+                      onChange={(e) => {
+                        handleReadFileAsDataUrl(
+                          e.target.files?.[0],
+                          (dataUrl) => setEditingProduct({ ...editingProduct, image: dataUrl }),
+                          { category: 'catalog', label: editingProduct.titleFa || editingProduct.model }
+                        );
+                        e.target.value = '';
+                      }}
                     />
                   </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setGalleryPicker({
+                        category: 'catalog',
+                        onPick: (url) => setEditingProduct({ ...editingProduct, image: url }),
+                      })
+                    }
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-[#091A42] border border-slate-300 dark:border-blue-800 font-bold cursor-pointer shrink-0"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+                    <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                  </button>
                 </div>
+
+                {/* Stations Thumbnails */}
+                {editingProduct.stations && editingProduct.stations.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200 dark:border-blue-900">
+                    {editingProduct.stations.map((st, stIdx) => (
+                      <div key={stIdx} className={`${cardClass} p-3 space-y-2`}>
+                        <div className="flex items-center gap-2">
+                          <img src={st.img} alt="" className="w-12 h-10 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-blue-800" />
+                          <input
+                            type="text"
+                            value={st.titleFa}
+                            onChange={(e) =>
+                              setEditingProduct({
+                                ...editingProduct,
+                                stations: editingProduct.stations?.map((item, i) =>
+                                  i === stIdx ? { ...item, titleFa: e.target.value } : item
+                                ),
+                              })
+                            }
+                            className={inputClass}
+                            placeholder="عنوان ایستگاه..."
+                          />
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <label className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#144AE0] text-white font-bold cursor-pointer">
+                            <Upload className="w-3 h-3" />
+                            <span>{isRtl ? 'آپلود عکس ایستگاه' : 'Upload Station'}</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                handleReadFileAsDataUrl(
+                                  e.target.files?.[0],
+                                  (dataUrl) =>
+                                    setEditingProduct({
+                                      ...editingProduct,
+                                      stations: editingProduct.stations?.map((item, i) =>
+                                        i === stIdx ? { ...item, img: dataUrl } : item
+                                      ),
+                                    }),
+                                  { category: 'catalog', label: st.titleFa || 'ایستگاه دستگاه' }
+                                );
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGalleryPicker({
+                                category: 'catalog',
+                                onPick: (url) =>
+                                  setEditingProduct({
+                                    ...editingProduct,
+                                    stations: editingProduct.stations?.map((item, i) =>
+                                      i === stIdx ? { ...item, img: url } : item
+                                    ),
+                                  }),
+                              })
+                            }
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 font-bold cursor-pointer"
+                          >
+                            <FolderOpen className="w-3 h-3 text-[#FD5202]" />
+                            <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2805,12 +3568,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="space-y-1">
                 <label className="text-slate-700 dark:text-slate-300 font-semibold">{isRtl ? 'تصویر کاور مقاله' : 'Article Cover Image'}</label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="text"
                     value={editingMedia.image}
                     onChange={(e) => setEditingMedia({ ...editingMedia, image: e.target.value })}
                     className={`${inputClass} flex-1 font-mono`}
+                    dir="ltr"
                   />
                   <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white font-bold cursor-pointer shrink-0">
                     <Upload className="w-3.5 h-3.5" />
@@ -2819,13 +3583,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) =>
-                        handleReadFileAsDataUrl(e.target.files?.[0], (dataUrl) =>
-                          setEditingMedia({ ...editingMedia, image: dataUrl })
-                        )
-                      }
+                      onChange={(e) => {
+                        handleReadFileAsDataUrl(
+                          e.target.files?.[0],
+                          (dataUrl) => setEditingMedia({ ...editingMedia, image: dataUrl }),
+                          { category: 'media', label: editingMedia.titleFa || 'کاور مقاله' }
+                        );
+                        e.target.value = '';
+                      }}
                     />
                   </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setGalleryPicker({
+                        category: 'media',
+                        onPick: (url) => setEditingMedia({ ...editingMedia, image: url }),
+                      })
+                    }
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 font-bold cursor-pointer shrink-0"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+                    <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2984,12 +3764,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="space-y-1">
                 <label className="text-slate-700 dark:text-slate-300 font-semibold">{isRtl ? 'تصویر هدر کمپین' : 'Campaign Hero Image'}</label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="text"
                     value={editingCampaign.heroImage}
                     onChange={(e) => setEditingCampaign({ ...editingCampaign, heroImage: e.target.value })}
                     className={`${inputClass} flex-1 font-mono`}
+                    dir="ltr"
                   />
                   <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white font-bold cursor-pointer shrink-0">
                     <Upload className="w-3.5 h-3.5" />
@@ -2998,13 +3779,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) =>
-                        handleReadFileAsDataUrl(e.target.files?.[0], (dataUrl) =>
-                          setEditingCampaign({ ...editingCampaign, heroImage: dataUrl })
-                        )
-                      }
+                      onChange={(e) => {
+                        handleReadFileAsDataUrl(
+                          e.target.files?.[0],
+                          (dataUrl) => setEditingCampaign({ ...editingCampaign, heroImage: dataUrl }),
+                          { category: 'campaigns', label: editingCampaign.titleFa || 'بنر کمپین' }
+                        );
+                        e.target.value = '';
+                      }}
                     />
                   </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setGalleryPicker({
+                        category: 'campaigns',
+                        onPick: (url) => setEditingCampaign({ ...editingCampaign, heroImage: url }),
+                      })
+                    }
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 font-bold cursor-pointer shrink-0"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+                    <span>{isRtl ? 'گالری' : 'Gallery'}</span>
+                  </button>
                 </div>
               </div>
 
@@ -3124,15 +3921,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <select
                     value={newAssetCategory}
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                      setNewAssetCategory(e.target.value as BrandAsset['category'])
+                      setNewAssetCategory(e.target.value as BrandAssetCategory)
                     }
                     className={inputClass}
                   >
-                    <option value="catalog">{isRtl ? 'کاتالوگ و مشخصات' : 'Catalog / Manual'}</option>
-                    <option value="logo">{isRtl ? 'لوگو و آرم رسمی' : 'Official Logo'}</option>
-                    <option value="brandbook">{isRtl ? 'سند هویت برند' : 'BrandBook'}</option>
-                    <option value="photo">{isRtl ? 'تصاویر صنعتی' : 'Industrial Photo'}</option>
-                    <option value="certificate">{isRtl ? 'گواهی نمایندگی' : 'Certificate'}</option>
+                    {ASSET_CATEGORIES.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {isRtl ? c.labelFa : c.labelEn}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -3173,11 +3970,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 type="submit"
                 className="px-6 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white font-bold cursor-pointer"
               >
-                {isRtl ? 'ذخیره در کتابخانه' : 'Save Asset'}
+                {isRtl ? 'ذخیره در گالری' : 'Save Asset'}
               </button>
             </div>
           </form>
         </div>
+      )}
+
+      {galleryPicker && (
+        <GalleryPickerModal
+          isOpen={!!galleryPicker}
+          assets={brandAssets}
+          language={language}
+          defaultCategory={galleryPicker.category}
+          onSelect={galleryPicker.onPick}
+          onClose={() => setGalleryPicker(null)}
+        />
       )}
     </div>
   );

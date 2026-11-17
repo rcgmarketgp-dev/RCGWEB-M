@@ -103,17 +103,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           }
         >
           <RcgLogo
-            variant={settings.logoVariant || 'color'}
-            height={settings.logoHeight || 36}
-            showSubtitle={settings.logoShowSubtitle !== false}
+            settings={settings}
+            isDark={isDark}
+            surface="auto"
             subtitleType={language === 'fa' ? 'fa' : 'en'}
-            logoType={settings.logoType || 'vector'}
-            customLogoUrl={settings.customLogoUrl}
-            primaryColor={settings.logoPrimaryColor || '#144AE0'}
-            secondaryColor={settings.logoSecondaryColor || '#091A42'}
-            accentColor={settings.logoAccentColor || '#FD5202'}
-            companyNameFa={settings.companyNameFa}
-            sloganFa={settings.sloganFa}
             sloganEn="WOODWORKING SOLUTIONS"
           />
           {isPageEditMode && (

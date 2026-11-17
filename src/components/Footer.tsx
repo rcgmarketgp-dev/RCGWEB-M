@@ -12,12 +12,13 @@ import {
 
 interface FooterProps {
   settings: SiteSettings;
+  isDark?: boolean;
   language: Language;
   navLinks: NavLinkItem[];
   sectionConfig?: import('../types').SectionCustomization;
 }
 
-export const Footer: React.FC<FooterProps> = ({ settings, language, navLinks, sectionConfig }) => {
+export const Footer: React.FC<FooterProps> = ({ settings, isDark = false, language, navLinks, sectionConfig }) => {
   const t = translations[language].footer;
   const isRtl = language === 'fa';
   const visibleLinks = navLinks.filter((l) => l.isVisible);
@@ -53,17 +54,11 @@ export const Footer: React.FC<FooterProps> = ({ settings, language, navLinks, se
           <div className="lg:col-span-5 space-y-4">
             <div className="cursor-pointer inline-block" onClick={scrollToTop}>
               <RcgLogo
-                variant="color"
-                inverted={true}
-                height={Math.min(48, settings.logoHeight || 40)}
-                showSubtitle={settings.logoShowSubtitle !== false}
+                settings={settings}
+                isDark={isDark}
+                surface="dark"
+                height={Math.min(52, Math.max(32, Math.round((settings.logoHeight || 36) * 1.1)))}
                 subtitleType={isRtl ? 'fa' : 'en'}
-                logoType={settings.logoType || 'vector'}
-                customLogoUrl={settings.customLogoUrl}
-                primaryColor={settings.logoPrimaryColor || '#144AE0'}
-                accentColor={settings.logoAccentColor || '#FD5202'}
-                companyNameFa={settings.companyNameFa}
-                sloganFa={settings.sloganFa}
               />
             </div>
 

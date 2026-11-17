@@ -157,13 +157,20 @@ export interface SiteSettings {
   instagramUrl: string;
   linkedinUrl: string;
   telegramUrl: string;
-  // Header Logo & Brand Customization
+  // Light Theme & Surface Logo Customization
   logoType?: 'vector' | 'custom';
   customLogoUrl?: string;
   logoVariant?: 'color' | 'dark' | 'light';
   logoPrimaryColor?: string;
   logoSecondaryColor?: string;
   logoAccentColor?: string;
+  // Dark Theme & Dark Surface Logo Customization
+  customLogoDarkUrl?: string;
+  logoDarkVariant?: 'color' | 'dark' | 'light';
+  logoDarkPrimaryColor?: string;
+  logoDarkSecondaryColor?: string;
+  logoDarkAccentColor?: string;
+  // Shared Logo Dimensions & Lockup
   logoHeight?: number;
   logoShowSubtitle?: boolean;
   headerCtaTextFa?: string;
@@ -225,11 +232,22 @@ export interface CampaignInquiry {
   notes?: string;
 }
 
+export type BrandAssetCategory =
+  | 'logo'
+  | 'hero'
+  | 'departments'
+  | 'catalog'
+  | 'campaigns'
+  | 'media'
+  | 'photo'
+  | 'brandbook'
+  | 'certificate';
+
 export interface BrandAsset {
   id: string;
   titleFa: string;
   titleEn: string;
-  category: 'logo' | 'catalog' | 'photo' | 'brandbook' | 'certificate';
+  category: BrandAssetCategory;
   url: string;
   fileSize: string;
   fileType: string;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product, Language, SectionCustomization } from '../types';
+import { Product, Language, SectionCustomization, SiteSettings } from '../types';
 import { translations } from '../utils/i18n';
 import { triggerCtaLink } from '../utils/ctaNavigation';
 import { MachineShowcaseCard } from './MachineShowcaseCard';
@@ -10,6 +10,8 @@ import { motion, AnimatePresence } from 'motion/react';
 interface MachineryCatalogProps {
   products: Product[];
   language: Language;
+  settings?: SiteSettings;
+  isDark?: boolean;
   sectionConfig?: SectionCustomization;
   onInquireProduct: (productName: string) => void;
   onOpenMachineryManagement?: () => void;
@@ -18,6 +20,8 @@ interface MachineryCatalogProps {
 export const MachineryCatalog: React.FC<MachineryCatalogProps> = ({
   products,
   language,
+  settings,
+  isDark = false,
   sectionConfig,
   onInquireProduct,
   onOpenMachineryManagement,
@@ -158,6 +162,8 @@ export const MachineryCatalog: React.FC<MachineryCatalogProps> = ({
                 key={prod.id}
                 product={prod}
                 language={language}
+                settings={settings}
+                isDark={isDark}
                 onInquire={onInquireProduct}
                 onOpenSpecs={(p) => setSelectedProduct(p)}
               />

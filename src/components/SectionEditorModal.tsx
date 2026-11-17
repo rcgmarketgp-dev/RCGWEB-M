@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import {
+  BrandAsset,
+  BrandAssetCategory,
+  CampaignLanding,
   Department,
   HeroSlide,
   Language,
+  MediaItem,
   SectionCustomization,
   SectionId,
   SiteSectionsConfig,
   SiteSettings,
-  CampaignLanding,
 } from '../types';
 import { RcgLogo } from './RcgLogo';
+import { GalleryPickerModal } from './GalleryPickerModal';
+import { formatAssetBytes } from '../utils/assetCategories';
 import {
   X,
   Save,
@@ -21,6 +26,10 @@ import {
   Palette,
   MousePointerClick,
   CheckCircle2,
+  Sun,
+  Moon,
+  FolderOpen,
+  Layers,
 } from 'lucide-react';
 
 interface SectionEditorModalProps {
@@ -32,23 +41,27 @@ interface SectionEditorModalProps {
   heroSlides: HeroSlide[];
   departments: Department[];
   campaigns: CampaignLanding[];
+  mediaItems?: MediaItem[];
+  brandAssets: BrandAsset[];
   onUpdateSettings: (settings: SiteSettings) => void;
   onUpdateSectionsConfig: (config: SiteSectionsConfig) => void;
   onUpdateSlides: (slides: HeroSlide[]) => void;
   onUpdateDepartments: (depts: Department[]) => void;
   onUpdateCampaigns: (campaigns: CampaignLanding[]) => void;
+  onUpdateMediaItems?: (items: MediaItem[]) => void;
+  onArchiveAsset: (asset: Omit<BrandAsset, 'id' | 'uploadedAt'>) => void;
   onClose: () => void;
   onNotify: (msg: string) => void;
 }
 
 const SECTION_META: Record<SectionId, { fa: string; en: string }> = {
-  header: { fa: 'هدر سایت، لوگو و دکمه فراخوان بالا', en: 'Header Logo, Brand Colors & Top CTA' },
-  hero: { fa: 'اسلایدر اصلی و فراخوان‌های صفحه نخست (Hero)', en: 'Hero Carousel, Imagery & CTA Buttons' },
-  departments: { fa: 'بخش دپارتمان‌های تخصصی چهارگانه', en: 'Four Specialized Departments Section' },
+  header: { fa: 'هدر سایت، لوگو (دارک/لایت) و دکمه فراخوان بالا', en: 'Header Logo (Light/Dark), Brand Colors & Top CTA' },
+  hero: { fa: 'اسلایدر اصلی، پس‌زمینه و فراخوان‌های هیرو', en: 'Hero Carousel, Backdrop Imagery & CTA Buttons' },
+  departments: { fa: 'بخش چهار رکن خدمات یکپارچه و زیرکارت‌ها', en: 'Four Pillars Departments & Sub-Card Photos' },
   catalog: { fa: 'کاتالوگ ماشین‌آلات و تجهیزات برشکاری', en: 'Machinery & Tooling Catalog Section' },
   campaigns: { fa: 'بخش کمپین‌ها و صفحات فرود فروش', en: 'Active Campaigns Showcase' },
   calculator: { fa: 'محاسبه‌گر آنلاین تیزکاری اره الماسه', en: 'Saw Blade Sharpening Calculator' },
-  media: { fa: 'مرکز رسانه، مقالات فنی و اخبار', en: 'Media Center & Technical Insights' },
+  media: { fa: 'مرکز رسانه، مقالات فنی و تصاویر کاور', en: 'Media Center & Technical Insights' },
   about: { fa: 'معرفی گروه صنعتی آرسی و تصویر مجموعه', en: 'About RCG & Facility Showcase' },
   contact: { fa: 'بخش تماس با ما و درخواست کارشناسی', en: 'Contact & Inquiry Section' },
   footer: { fa: 'فوتر سایت، توضیحات برند و دسترسی‌ها', en: 'Footer Brand Summary & Actions' },
@@ -76,11 +89,15 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
   heroSlides,
   departments,
   campaigns,
+  mediaItems = [],
+  brandAssets,
   onUpdateSettings,
   onUpdateSectionsConfig,
   onUpdateSlides,
   onUpdateDepartments,
   onUpdateCampaigns,
+  onUpdateMediaItems,
+  onArchiveAsset,
   onClose,
   onNotify,
 }) => {
@@ -92,7 +109,13 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
   const [activeDeptIdx, setActiveDeptIdx] = useState(0);
   const [draftCampaigns, setDraftCampaigns] = useState<CampaignLanding[]>(campaigns);
   const [activeCampIdx, setActiveCampIdx] = useState(0);
-  const [previewDarkHeader, setPreviewDarkHeader] = useState(false);
+  const [draftMedia, setDraftMedia] = useState<MediaItem[]>(mediaItems);
+  const [activeMediaIdx, setActiveMediaIdx] = useState(0);
+  const [logoEditMode, setLogoEditMode] = useState<'light' | 'dark'>('light');
+  const [galleryPicker, setGalleryPicker] = useState<{
+    category: BrandAssetCategory | 'all';
+    onPick: (url: string) => void;
+  } | null>(null);
 
   useEffect(() => {
     if (!isOpen || !sectionId) return;
@@ -102,11 +125,18 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
     }
     setDraftSlides(heroSlides.map((s) => ({ ...s })));
     setActiveSlideIdx(0);
-    setDraftDepts(departments.map((d) => ({ ...d })));
+    setDraftDepts(
+      departments.map((d) => ({
+        ...d,
+        subCards: d.subCards.map((sc) => ({ ...sc })),
+      }))
+    );
     setActiveDeptIdx(0);
     setDraftCampaigns(campaigns.map((c) => ({ ...c })));
     setActiveCampIdx(0);
-  }, [isOpen, sectionId, settings, sectionsConfig, heroSlides, departments, campaigns]);
+    setDraftMedia(mediaItems.map((m) => ({ ...m })));
+    setActiveMediaIdx(0);
+  }, [isOpen, sectionId, settings, sectionsConfig, heroSlides, departments, campaigns, mediaItems]);
 
   if (!isOpen || !sectionId) return null;
 
@@ -115,13 +145,27 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
 
   const handleFileUpload = (
     file: File | undefined,
+    archiveCategory: BrandAssetCategory,
+    archiveLabel: string,
     onLoaded: (dataUrl: string) => void
   ) => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        onLoaded(reader.result);
+        const dataUrl = reader.result;
+        onLoaded(dataUrl);
+        const cleanName = file.name.replace(/\.[^/.]+$/, '');
+        onArchiveAsset({
+          titleFa: `${archiveLabel} — ${cleanName}`,
+          titleEn: `${cleanName} (${archiveCategory})`,
+          category: archiveCategory,
+          url: dataUrl,
+          fileSize: formatAssetBytes(file.size),
+          fileType: file.type
+            ? `${file.type.replace('image/', '').toUpperCase()} Image`
+            : 'Uploaded Image',
+        });
       }
     };
     reader.readAsDataURL(file);
@@ -144,6 +188,8 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
         onUpdateDepartments(draftDepts);
       } else if (sectionId === 'campaigns') {
         onUpdateCampaigns(draftCampaigns);
+      } else if (sectionId === 'media' && onUpdateMediaItems) {
+        onUpdateMediaItems(draftMedia);
       }
     }
 
@@ -161,6 +207,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
   const currentSlide = draftSlides[activeSlideIdx] || draftSlides[0];
   const currentDept = draftDepts[activeDeptIdx] || draftDepts[0];
   const currentCamp = draftCampaigns[activeCampIdx] || draftCampaigns[0];
+  const currentMediaItem = draftMedia[activeMediaIdx] || draftMedia[0];
 
   const renderLinkPicker = (
     label: string,
@@ -208,25 +255,35 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
   const renderImageEditor = (
     label: string,
     imageUrl: string | undefined,
-    onChange: (url: string) => void
+    archiveCategory: BrandAssetCategory,
+    onChange: (url: string) => void,
+    compact = false
   ) => (
-    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-3">
+    <div
+      className={`${
+        compact ? 'p-3' : 'p-4'
+      } rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-2.5`}
+    >
       <label className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
-        <ImageIcon className="w-4 h-4 text-[#FD5202]" />
+        <ImageIcon className="w-3.5 h-3.5 text-[#FD5202]" />
         <span>{label}</span>
       </label>
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-        <div className="w-full sm:w-36 h-24 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-blue-800 shrink-0">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div
+          className={`${
+            compact ? 'w-full sm:w-24 h-16' : 'w-full sm:w-32 h-22'
+          } rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-blue-800 shrink-0`}
+        >
           {imageUrl ? (
             <img
               src={imageUrl}
-              alt="Section Preview"
+              alt="Preview"
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-400 text-[11px]">
+            <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px]">
               No Image
             </div>
           )}
@@ -241,16 +298,35 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
             className={`${inputClass} font-mono`}
             dir="ltr"
           />
-          <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer transition-colors">
-            <Upload className="w-3.5 h-3.5" />
-            <span>{isRtl ? 'آپلود تصویر جدید از سیستم' : 'Upload New Image'}</span>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleFileUpload(e.target.files?.[0], onChange)}
-            />
-          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#144AE0] hover:bg-blue-700 text-white text-[11px] font-bold cursor-pointer transition-colors">
+              <Upload className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'آپلود تصویر (بایگانی خودکار)' : 'Upload & Archive'}</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  handleFileUpload(e.target.files?.[0], archiveCategory, label, onChange);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() =>
+                setGalleryPicker({
+                  category: archiveCategory,
+                  onPick: onChange,
+                })
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#091A42] hover:border-[#FD5202] text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-blue-800 text-[11px] font-bold cursor-pointer transition-colors"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-[#FD5202]" />
+              <span>{isRtl ? 'انتخاب از گالری' : 'Pick from Gallery'}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -274,8 +350,8 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-[#A6D6FE]">
                 {isRtl
-                  ? 'تغییر مستقیم متن‌ها، تصاویر، متن کلیدها و لینک‌های این بخش'
-                  : 'Customize bilingual texts, photos, button labels and links'}
+                  ? 'تغییر مستقیم متن‌ها، لوگو (لایت و دارک)، تصاویر و لینک کلیدها'
+                  : 'Customize bilingual texts, light/dark logos, photos, and button links'}
               </p>
             </div>
           </div>
@@ -291,61 +367,52 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
-          {/* HEADER & LOGO SETTINGS */}
+          {/* HEADER & SITE-WIDE LIGHT/DARK LOGO SETTINGS */}
           {sectionId === 'header' && (
             <div className="space-y-5">
-              {/* Live Logo Preview Box */}
+              {/* Dual Live Logo Preview (Light Surface + Dark Surface Side by Side) */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
-                    <Palette className="w-4 h-4 text-[#FD5202]" />
-                    <span>{isRtl ? 'پیش‌نمایش زنده لوگوی هدر سایت' : 'Live Header Logo Preview'}</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewDarkHeader(!previewDarkHeader)}
-                    className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800 cursor-pointer"
-                  >
-                    {previewDarkHeader
-                      ? isRtl
-                        ? 'پیش‌نمایش روی هدر روشن'
-                        : 'Preview Light BG'
-                      : isRtl
-                      ? 'پیش‌نمایش روی هدر تیره'
-                      : 'Preview Dark BG'}
-                  </button>
-                </div>
-
-                <div
-                  className={`p-5 rounded-2xl border flex items-center justify-between transition-colors ${
-                    previewDarkHeader
-                      ? 'bg-[#060F26] border-blue-800 text-white'
-                      : 'bg-white border-slate-200 text-slate-900'
-                  }`}
-                >
-                  <RcgLogo
-                    variant={draftSettings.logoVariant || 'color'}
-                    inverted={previewDarkHeader}
-                    height={draftSettings.logoHeight || 36}
-                    showSubtitle={draftSettings.logoShowSubtitle !== false}
-                    subtitleType={isRtl ? 'fa' : 'en'}
-                    logoType={draftSettings.logoType || 'vector'}
-                    customLogoUrl={draftSettings.customLogoUrl}
-                    primaryColor={draftSettings.logoPrimaryColor || '#144AE0'}
-                    secondaryColor={draftSettings.logoSecondaryColor || '#091A42'}
-                    accentColor={draftSettings.logoAccentColor || '#FD5202'}
-                    companyNameFa={draftSettings.companyNameFa}
-                    sloganFa={draftSettings.sloganFa}
-                  />
-                  <span className="px-4 py-2 rounded-xl bg-[#FD5202] text-white text-xs font-bold">
+                <span className="text-xs font-bold text-[#091A42] dark:text-white flex items-center gap-1.5">
+                  <Palette className="w-4 h-4 text-[#FD5202]" />
+                  <span>
                     {isRtl
-                      ? draftSettings.headerCtaTextFa || 'درخواست مشاوره و قیمت'
-                      : draftSettings.headerCtaTextEn || 'Request Quote'}
+                      ? 'پیش‌نمایش همزمان لوگو روی پس‌زمینه روشن و تیره (قابل اعمال در کل سایت و ۴ رکن)'
+                      : 'Live Dual Logo Preview (Light & Dark Surfaces — Applied Site-Wide)'}
                   </span>
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 text-slate-900 space-y-2 shadow-xs">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                      <span className="flex items-center gap-1">
+                        <Sun className="w-3.5 h-3.5 text-amber-500" />
+                        <span>{isRtl ? 'حالت روز / پس‌زمینه روشن' : 'Light Mode / Surface'}</span>
+                      </span>
+                    </div>
+                    <RcgLogo
+                      settings={draftSettings}
+                      surface="light"
+                      subtitleType={isRtl ? 'fa' : 'en'}
+                    />
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-[#060F26] border border-blue-800 text-white space-y-2 shadow-xs">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <Moon className="w-3.5 h-3.5 text-[#A6D6FE]" />
+                        <span>{isRtl ? 'حالت شب / فوتر و پس‌زمینه تیره' : 'Dark Mode / Dark BG'}</span>
+                      </span>
+                    </div>
+                    <RcgLogo
+                      settings={draftSettings}
+                      surface="dark"
+                      subtitleType={isRtl ? 'fa' : 'en'}
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Logo Type Selector */}
+              {/* Global Logo Type Selector */}
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -369,37 +436,179 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                   }`}
                 >
                   <ImageIcon className="w-4 h-4" />
-                  <span>{isRtl ? 'آپلود لوگوی تصویری سفارشی' : 'Custom Image Logo'}</span>
+                  <span>{isRtl ? 'لوگوی تصویری سفارشی (لایت / دارک)' : 'Custom Image Logo (Light / Dark)'}</span>
                 </button>
               </div>
 
-              {draftSettings.logoType === 'custom' ? (
+              {/* Light Mode vs Dark Mode Switcher Tabs */}
+              <div className="flex items-center gap-2 border-b border-slate-200 dark:border-blue-900/60 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setLogoEditMode('light')}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-colors ${
+                    logoEditMode === 'light'
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                      : 'bg-slate-100 dark:bg-[#060F26] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                  }`}
+                >
+                  <Sun className="w-3.5 h-3.5" />
+                  <span>{isRtl ? 'تنظیمات پس‌زمینه روشن (Light)' : 'Light Theme / BG'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogoEditMode('dark')}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-colors ${
+                    logoEditMode === 'dark'
+                      ? 'bg-[#091A42] text-[#A6D6FE] border-blue-500 shadow-sm'
+                      : 'bg-slate-100 dark:bg-[#060F26] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                  }`}
+                >
+                  <Moon className="w-3.5 h-3.5" />
+                  <span>{isRtl ? 'تنظیمات پس‌زمینه تیره / دارک (Dark)' : 'Dark Theme / Footer BG'}</span>
+                </button>
+              </div>
+
+              {logoEditMode === 'light' ? (
+                draftSettings.logoType === 'custom' ? (
+                  renderImageEditor(
+                    isRtl ? 'تصویر لوگو برای حالت روشن (Light Mode)' : 'Custom Logo for Light Background',
+                    draftSettings.customLogoUrl,
+                    'logo',
+                    (url) => setDraftSettings({ ...draftSettings, customLogoUrl: url, logoType: 'custom' })
+                  )
+                ) : (
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'رنگ اصلی (آبی لوگو)' : 'Primary'}
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="color"
+                            value={draftSettings.logoPrimaryColor || '#144AE0'}
+                            onChange={(e) =>
+                              setDraftSettings({ ...draftSettings, logoPrimaryColor: e.target.value })
+                            }
+                            className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                          />
+                          <input
+                            type="text"
+                            value={draftSettings.logoPrimaryColor || '#144AE0'}
+                            onChange={(e) =>
+                              setDraftSettings({ ...draftSettings, logoPrimaryColor: e.target.value })
+                            }
+                            className={`${inputClass} font-mono`}
+                            dir="ltr"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'رنگ حروف C و G' : 'Secondary'}
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="color"
+                            value={draftSettings.logoSecondaryColor || '#091A42'}
+                            onChange={(e) =>
+                              setDraftSettings({ ...draftSettings, logoSecondaryColor: e.target.value })
+                            }
+                            className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                          />
+                          <input
+                            type="text"
+                            value={draftSettings.logoSecondaryColor || '#091A42'}
+                            onChange={(e) =>
+                              setDraftSettings({ ...draftSettings, logoSecondaryColor: e.target.value })
+                            }
+                            className={`${inputClass} font-mono`}
+                            dir="ltr"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'رنگ مثلث تاکیدی' : 'Accent'}
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="color"
+                            value={draftSettings.logoAccentColor || '#FD5202'}
+                            onChange={(e) =>
+                              setDraftSettings({ ...draftSettings, logoAccentColor: e.target.value })
+                            }
+                            className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                          />
+                          <input
+                            type="text"
+                            value={draftSettings.logoAccentColor || '#FD5202'}
+                            onChange={(e) =>
+                              setDraftSettings({ ...draftSettings, logoAccentColor: e.target.value })
+                            }
+                            className={`${inputClass} font-mono`}
+                            dir="ltr"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isRtl ? 'نوع رنگ (Light)' : 'Light Variant'}
+                        </label>
+                        <select
+                          value={draftSettings.logoVariant || 'color'}
+                          onChange={(e) =>
+                            setDraftSettings({
+                              ...draftSettings,
+                              logoVariant: e.target.value as 'color' | 'dark' | 'light',
+                            })
+                          }
+                          className={inputClass}
+                        >
+                          <option value="color">{isRtl ? 'تمام‌رنگی رسمی' : 'Brand Color'}</option>
+                          <option value="dark">{isRtl ? 'تک‌رنگ تیره' : 'Mono Dark'}</option>
+                          <option value="light">{isRtl ? 'تک‌رنگ سفید' : 'Mono Light'}</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : draftSettings.logoType === 'custom' ? (
                 renderImageEditor(
-                  isRtl ? 'فایل یا آدرس لوگوی سفارشی هدر' : 'Custom Header Logo Image',
-                  draftSettings.customLogoUrl,
-                  (url) => setDraftSettings({ ...draftSettings, customLogoUrl: url })
+                  isRtl ? 'تصویر لوگو برای حالت تاریک / فوتر (Dark Mode)' : 'Custom Logo for Dark Background',
+                  draftSettings.customLogoDarkUrl,
+                  'logo',
+                  (url) =>
+                    setDraftSettings({
+                      ...draftSettings,
+                      customLogoDarkUrl: url,
+                      logoType: 'custom',
+                    })
                 )
               ) : (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-4 rounded-2xl bg-[#060F26] border border-blue-900/70 space-y-4 text-white">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {isRtl ? 'رنگ اصلی (آبی لوگو)' : 'Primary Color'}
+                      <label className="text-xs font-semibold text-slate-200">
+                        {isRtl ? 'رنگ اصلی در دارک' : 'Dark Primary'}
                       </label>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <input
                           type="color"
-                          value={draftSettings.logoPrimaryColor || '#144AE0'}
+                          value={draftSettings.logoDarkPrimaryColor || '#3B82F6'}
                           onChange={(e) =>
-                            setDraftSettings({ ...draftSettings, logoPrimaryColor: e.target.value })
+                            setDraftSettings({ ...draftSettings, logoDarkPrimaryColor: e.target.value })
                           }
-                          className="w-10 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                          className="w-9 h-9 rounded-lg border border-blue-800 cursor-pointer shrink-0"
                         />
                         <input
                           type="text"
-                          value={draftSettings.logoPrimaryColor || '#144AE0'}
+                          value={draftSettings.logoDarkPrimaryColor || '#3B82F6'}
                           onChange={(e) =>
-                            setDraftSettings({ ...draftSettings, logoPrimaryColor: e.target.value })
+                            setDraftSettings({ ...draftSettings, logoDarkPrimaryColor: e.target.value })
                           }
                           className={`${inputClass} font-mono`}
                           dir="ltr"
@@ -408,23 +617,29 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {isRtl ? 'رنگ بدنه حروف (سرمه‌ای)' : 'Secondary Color'}
+                      <label className="text-xs font-semibold text-slate-200">
+                        {isRtl ? 'رنگ حروف در دارک' : 'Dark Letters'}
                       </label>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <input
                           type="color"
-                          value={draftSettings.logoSecondaryColor || '#091A42'}
+                          value={draftSettings.logoDarkSecondaryColor || '#FFFFFF'}
                           onChange={(e) =>
-                            setDraftSettings({ ...draftSettings, logoSecondaryColor: e.target.value })
+                            setDraftSettings({
+                              ...draftSettings,
+                              logoDarkSecondaryColor: e.target.value,
+                            })
                           }
-                          className="w-10 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                          className="w-9 h-9 rounded-lg border border-blue-800 cursor-pointer shrink-0"
                         />
                         <input
                           type="text"
-                          value={draftSettings.logoSecondaryColor || '#091A42'}
+                          value={draftSettings.logoDarkSecondaryColor || '#FFFFFF'}
                           onChange={(e) =>
-                            setDraftSettings({ ...draftSettings, logoSecondaryColor: e.target.value })
+                            setDraftSettings({
+                              ...draftSettings,
+                              logoDarkSecondaryColor: e.target.value,
+                            })
                           }
                           className={`${inputClass} font-mono`}
                           dir="ltr"
@@ -433,38 +648,60 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {isRtl ? 'رنگ تاکیدی (نارنجی)' : 'Accent Color'}
+                      <label className="text-xs font-semibold text-slate-200">
+                        {isRtl ? 'رنگ تاکیدی در دارک' : 'Dark Accent'}
                       </label>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <input
                           type="color"
-                          value={draftSettings.logoAccentColor || '#FD5202'}
+                          value={draftSettings.logoDarkAccentColor || '#FD5202'}
                           onChange={(e) =>
-                            setDraftSettings({ ...draftSettings, logoAccentColor: e.target.value })
+                            setDraftSettings({ ...draftSettings, logoDarkAccentColor: e.target.value })
                           }
-                          className="w-10 h-9 rounded-lg border border-slate-300 cursor-pointer"
+                          className="w-9 h-9 rounded-lg border border-blue-800 cursor-pointer shrink-0"
                         />
                         <input
                           type="text"
-                          value={draftSettings.logoAccentColor || '#FD5202'}
+                          value={draftSettings.logoDarkAccentColor || '#FD5202'}
                           onChange={(e) =>
-                            setDraftSettings({ ...draftSettings, logoAccentColor: e.target.value })
+                            setDraftSettings({ ...draftSettings, logoDarkAccentColor: e.target.value })
                           }
                           className={`${inputClass} font-mono`}
                           dir="ltr"
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-200">
+                        {isRtl ? 'استایل در دارک' : 'Dark Variant'}
+                      </label>
+                      <select
+                        value={draftSettings.logoDarkVariant || 'color'}
+                        onChange={(e) =>
+                          setDraftSettings({
+                            ...draftSettings,
+                            logoDarkVariant: e.target.value as 'color' | 'dark' | 'light',
+                          })
+                        }
+                        className={inputClass}
+                      >
+                        <option value="color">{isRtl ? 'تمام‌رنگی رسمی' : 'Brand Color'}</option>
+                        <option value="light">{isRtl ? 'تک‌رنگ سفید' : 'Mono White'}</option>
+                        <option value="dark">{isRtl ? 'تک‌رنگ سفارشی' : 'Mono Custom'}</option>
+                      </select>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Size, Variant & Subtitle Controls */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+              {/* Size & Subtitle Controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {isRtl ? `اندازه لوگوی هدر: ${draftSettings.logoHeight || 36}px` : `Logo Height: ${draftSettings.logoHeight || 36}px`}
+                    {isRtl
+                      ? `اندازه پایه لوگو (اعمال در هدر و کارت‌ها): ${draftSettings.logoHeight || 36}px`
+                      : `Base Logo Size: ${draftSettings.logoHeight || 36}px`}
                   </label>
                   <input
                     type="range"
@@ -478,27 +715,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {isRtl ? 'حالت نمایش لوگو' : 'Logo Style Variant'}
-                  </label>
-                  <select
-                    value={draftSettings.logoVariant || 'color'}
-                    onChange={(e) =>
-                      setDraftSettings({
-                        ...draftSettings,
-                        logoVariant: e.target.value as 'color' | 'dark' | 'light',
-                      })
-                    }
-                    className={inputClass}
-                  >
-                    <option value="color">{isRtl ? 'تمام‌رنگی رسمی (Color)' : 'Brand Color'}</option>
-                    <option value="dark">{isRtl ? 'تک‌رنگ تیره (Dark)' : 'Monochrome Dark'}</option>
-                    <option value="light">{isRtl ? 'تک‌رنگ سفید (Light)' : 'Monochrome Light'}</option>
-                  </select>
-                </div>
-
-                <label className="flex items-center gap-2 pt-4 cursor-pointer text-xs font-semibold">
+                <label className="flex items-center gap-2 pt-3 cursor-pointer text-xs font-semibold">
                   <input
                     type="checkbox"
                     checked={draftSettings.logoShowSubtitle !== false}
@@ -507,7 +724,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                     }
                     className="w-4 h-4 accent-[#FD5202] rounded"
                   />
-                  <span>{isRtl ? 'نمایش زیرعنوان برند' : 'Show Brand Subtitle'}</span>
+                  <span>{isRtl ? 'نمایش نام و شعار زیر لوگو' : 'Show Brand Subtitle'}</span>
                 </label>
               </div>
 
@@ -574,6 +791,14 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
           {/* HERO SECTION EDITOR */}
           {sectionId === 'hero' && currentSlide && (
             <div className="space-y-5">
+              {/* Hero Background Parallax Image */}
+              {renderImageEditor(
+                isRtl ? 'تصویر پس‌زمینه پارالاکس بخش هیرو' : 'Hero Parallax Background Backdrop',
+                draftSection.image,
+                'hero',
+                (url) => setDraftSection({ ...draftSection, image: url })
+              )}
+
               {/* Slide Selector Tabs */}
               <div className="flex items-center gap-2 flex-wrap">
                 {draftSlides.map((sl, idx) => (
@@ -723,6 +948,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
               {renderImageEditor(
                 isRtl ? `تصویر اصلی اسلاید ${activeSlideIdx + 1}` : `Slide ${activeSlideIdx + 1} Showcase Image`,
                 currentSlide.image,
+                'hero',
                 (url) =>
                   setDraftSlides(
                     draftSlides.map((s, i) => (i === activeSlideIdx ? { ...s, image: url } : s))
@@ -1016,6 +1242,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                 renderImageEditor(
                   isRtl ? 'تصویر اختصاصی این بخش' : 'Section Showcase Image',
                   draftSection.image,
+                  'photo',
                   (url) => setDraftSection({ ...draftSection, image: url })
                 )}
 
@@ -1062,7 +1289,7 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                 </div>
               )}
 
-              {/* Contextual Item Editor for Departments */}
+              {/* Contextual Item Editor for Departments (Main Card + All 3 Sub-Cards) */}
               {sectionId === 'departments' && currentDept && (
                 <div className="p-4 rounded-2xl bg-blue-50/50 dark:bg-[#060F26] border border-blue-200 dark:border-blue-800 space-y-4">
                   <div className="flex flex-wrap items-center gap-2">
@@ -1141,13 +1368,135 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                   </div>
 
                   {renderImageEditor(
-                    isRtl ? `تصویر کارت دپارتمان «${currentDept.titleFa}»` : `Photo for ${currentDept.titleEn}`,
+                    isRtl
+                      ? `تصویر اصلی رکن «${currentDept.titleFa}»`
+                      : `Main Photo for ${currentDept.titleEn}`,
                     currentDept.image,
+                    'departments',
                     (url) =>
                       setDraftDepts(
                         draftDepts.map((d, i) => (i === activeDeptIdx ? { ...d, image: url } : d))
                       )
                   )}
+
+                  {/* Sub-Section Title + 3 Mini Cards Photos & Titles */}
+                  <div className="p-3.5 rounded-2xl bg-white dark:bg-[#091A42] border border-blue-200 dark:border-blue-900 space-y-3">
+                    <p className="text-xs font-black text-[#091A42] dark:text-[#A6D6FE] flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-[#FD5202]" />
+                      <span>
+                        {isRtl
+                          ? 'زیرکارت‌های ۳گانه و تصاویر آن‌ها'
+                          : 'Nested Sub-Cards (Titles & Photos)'}
+                      </span>
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <input
+                        type="text"
+                        value={currentDept.subSectionTitleFa}
+                        onChange={(e) =>
+                          setDraftDepts(
+                            draftDepts.map((d, i) =>
+                              i === activeDeptIdx
+                                ? { ...d, subSectionTitleFa: e.target.value }
+                                : d
+                            )
+                          )
+                        }
+                        placeholder="عنوان بخش زیرکارت‌ها (فارسی)"
+                        className={inputClass}
+                      />
+                      <input
+                        type="text"
+                        value={currentDept.subSectionTitleEn}
+                        onChange={(e) =>
+                          setDraftDepts(
+                            draftDepts.map((d, i) =>
+                              i === activeDeptIdx
+                                ? { ...d, subSectionTitleEn: e.target.value }
+                                : d
+                            )
+                          )
+                        }
+                        placeholder="Sub-Cards Heading (English)"
+                        className={inputClass}
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      {currentDept.subCards.map((sc, sIdx) => (
+                        <div
+                          key={sIdx}
+                          className="p-3 rounded-xl bg-slate-50 dark:bg-[#060F26] border border-slate-200 dark:border-blue-900/60 space-y-2.5"
+                        >
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              value={sc.titleFa}
+                              onChange={(e) =>
+                                setDraftDepts(
+                                  draftDepts.map((d, i) =>
+                                    i === activeDeptIdx
+                                      ? {
+                                          ...d,
+                                          subCards: d.subCards.map((card, ci) =>
+                                            ci === sIdx ? { ...card, titleFa: e.target.value } : card
+                                          ),
+                                        }
+                                      : d
+                                  )
+                                )
+                              }
+                              placeholder={`عنوان کارت ${sIdx + 1} (فارسی)`}
+                              className={inputClass}
+                            />
+                            <input
+                              type="text"
+                              value={sc.titleEn}
+                              onChange={(e) =>
+                                setDraftDepts(
+                                  draftDepts.map((d, i) =>
+                                    i === activeDeptIdx
+                                      ? {
+                                          ...d,
+                                          subCards: d.subCards.map((card, ci) =>
+                                            ci === sIdx ? { ...card, titleEn: e.target.value } : card
+                                          ),
+                                        }
+                                      : d
+                                  )
+                                )
+                              }
+                              placeholder={`Sub-Card ${sIdx + 1} Title (En)`}
+                              className={inputClass}
+                            />
+                          </div>
+
+                          {renderImageEditor(
+                            isRtl
+                              ? `تصویر کارت شماره ${sIdx + 1} (${sc.titleFa})`
+                              : `Sub-Card ${sIdx + 1} Photo`,
+                            sc.image,
+                            'departments',
+                            (url) =>
+                              setDraftDepts(
+                                draftDepts.map((d, i) =>
+                                  i === activeDeptIdx
+                                    ? {
+                                        ...d,
+                                        subCards: d.subCards.map((card, ci) =>
+                                          ci === sIdx ? { ...card, image: url } : card
+                                        ),
+                                      }
+                                    : d
+                                )
+                              ),
+                            true
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <input
@@ -1243,10 +1592,47 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
                   {renderImageEditor(
                     isRtl ? `تصویر کمپین «${currentCamp.titleFa}»` : `Hero Photo for ${currentCamp.titleEn}`,
                     currentCamp.heroImage,
+                    'campaigns',
                     (url) =>
                       setDraftCampaigns(
                         draftCampaigns.map((c, i) =>
                           i === activeCampIdx ? { ...c, heroImage: url } : c
+                        )
+                      )
+                  )}
+                </div>
+              )}
+
+              {/* Contextual Quick Media Cover Photo Editor */}
+              {sectionId === 'media' && currentMediaItem && (
+                <div className="p-4 rounded-2xl bg-blue-50/50 dark:bg-[#060F26] border border-blue-200 dark:border-blue-800 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {draftMedia.map((m, idx) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setActiveMediaIdx(idx)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer max-w-[200px] truncate ${
+                          idx === activeMediaIdx
+                            ? 'bg-[#144AE0] text-white border-[#144AE0]'
+                            : 'bg-white dark:bg-[#091A42] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-blue-900'
+                        }`}
+                      >
+                        {isRtl ? m.titleFa : m.titleEn}
+                      </button>
+                    ))}
+                  </div>
+
+                  {renderImageEditor(
+                    isRtl
+                      ? `تصویر کاور مطلب «${currentMediaItem.titleFa}»`
+                      : `Cover Image for ${currentMediaItem.titleEn}`,
+                    currentMediaItem.image,
+                    'media',
+                    (url) =>
+                      setDraftMedia(
+                        draftMedia.map((m, i) =>
+                          i === activeMediaIdx ? { ...m, image: url } : m
                         )
                       )
                   )}
@@ -1274,6 +1660,17 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
           </button>
         </div>
       </form>
+
+      {galleryPicker && (
+        <GalleryPickerModal
+          isOpen={!!galleryPicker}
+          assets={brandAssets}
+          language={language}
+          defaultCategory={galleryPicker.category}
+          onSelect={galleryPicker.onPick}
+          onClose={() => setGalleryPicker(null)}
+        />
+      )}
     </div>
   );
 };

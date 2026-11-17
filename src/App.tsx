@@ -268,6 +268,31 @@ export default function App() {
     localStorage.setItem('rcg_brand_assets', JSON.stringify(newAssets));
   };
 
+  const handleArchiveAsset = (asset: Omit<BrandAsset, 'id' | 'uploadedAt'>) => {
+    setBrandAssets((prev) => {
+      const existingIndex = prev.findIndex((a) => a.url === asset.url);
+      let next: BrandAsset[];
+      if (existingIndex >= 0) {
+        const existing = prev[existingIndex];
+        if (existing.category === asset.category) {
+          return prev;
+        }
+        next = prev.map((a, idx) =>
+          idx === existingIndex ? { ...a, category: asset.category } : a
+        );
+      } else {
+        const created: BrandAsset = {
+          ...asset,
+          id: `asset-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          uploadedAt: new Date().toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US'),
+        };
+        next = [created, ...prev];
+      }
+      localStorage.setItem('rcg_brand_assets', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const handleUpdateNavLinks = (newLinks: NavLinkItem[]) => {
     setNavLinks(newLinks);
     localStorage.setItem('rcg_nav_links', JSON.stringify(newLinks));
@@ -403,6 +428,8 @@ export default function App() {
           <DepartmentsSection
             departments={departments}
             language={language}
+            settings={siteSettings}
+            isDark={isDark}
             sectionConfig={sectionsConfig.departments}
             onSelectDepartmentForInquiry={openInquiryForDepartment}
           />
@@ -420,6 +447,8 @@ export default function App() {
           <MachineryCatalog
             products={products}
             language={language}
+            settings={siteSettings}
+            isDark={isDark}
             sectionConfig={sectionsConfig.catalog}
             onInquireProduct={openInquiryForProduct}
             onOpenMachineryManagement={() => handleOpenAdminWithTab('catalog')}
@@ -527,6 +556,7 @@ export default function App() {
       >
         <Footer
           settings={siteSettings}
+          isDark={isDark}
           language={language}
           navLinks={navLinks}
           sectionConfig={sectionsConfig.footer}
@@ -594,11 +624,15 @@ export default function App() {
           heroSlides={heroSlides}
           departments={departments}
           campaigns={campaigns}
+          mediaItems={mediaItems}
+          brandAssets={brandAssets}
           onUpdateSettings={handleUpdateSettings}
           onUpdateSectionsConfig={handleUpdateSectionsConfig}
           onUpdateSlides={handleUpdateSlides}
           onUpdateDepartments={handleUpdateDepartments}
           onUpdateCampaigns={handleUpdateCampaigns}
+          onUpdateMediaItems={handleUpdateMediaItems}
+          onArchiveAsset={handleArchiveAsset}
           onClose={() => setActiveEditSection(null)}
           onNotify={showPageToast}
         />
@@ -617,6 +651,10 @@ export default function App() {
           initialTab={adminInitialTab}
           heroSlides={heroSlides}
           onUpdateSlides={handleUpdateSlides}
+          departments={departments}
+          onUpdateDepartments={handleUpdateDepartments}
+          sectionsConfig={sectionsConfig}
+          onUpdateSectionsConfig={handleUpdateSectionsConfig}
           products={products}
           onUpdateProducts={handleUpdateProducts}
           sharpeningOrders={sharpeningOrders}
@@ -631,6 +669,7 @@ export default function App() {
           onUpdateCampaignInquiries={handleUpdateCampaignInquiries}
           brandAssets={brandAssets}
           onUpdateBrandAssets={handleUpdateBrandAssets}
+          onArchiveAsset={handleArchiveAsset}
           onPreviewCampaign={(camp) => {
             setIsAdminOpen(false);
             setActiveCampaignModal(camp);
@@ -663,6 +702,8 @@ export default function App() {
           isOpen={!!activeCampaignModal}
           onClose={() => setActiveCampaignModal(null)}
           language={language}
+          settings={siteSettings}
+          isDark={isDark}
           onRegisterInquiry={(inq) => {
             handleUpdateCampaignInquiries([inq, ...campaignInquiries]);
           }}

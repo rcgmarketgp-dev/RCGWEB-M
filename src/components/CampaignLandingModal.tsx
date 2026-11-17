@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CampaignLanding, CampaignInquiry, Language, Product } from '../types';
+import { CampaignLanding, CampaignInquiry, Language, Product, SiteSettings } from '../types';
 import { RcgLogo } from './RcgLogo';
 import { useForm } from 'react-hook-form';
 import {
@@ -14,6 +14,8 @@ interface CampaignLandingModalProps {
   isOpen: boolean;
   onClose: () => void;
   language: Language;
+  settings?: SiteSettings;
+  isDark?: boolean;
   onRegisterInquiry: (inquiry: CampaignInquiry) => void;
   linkedProduct?: Product;
 }
@@ -31,6 +33,8 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
   isOpen,
   onClose,
   language,
+  settings,
+  isDark = false,
   onRegisterInquiry,
 }) => {
   const isRtl = language === 'fa';
@@ -103,7 +107,13 @@ export const CampaignLandingModal: React.FC<CampaignLandingModalProps> = ({
       {/* Top Banner Navigation Bar */}
       <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#060F26]/95 backdrop-blur-md border-b border-slate-200 dark:border-blue-900/50 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
-          <RcgLogo variant="color" height={32} showSubtitle={false} />
+          <RcgLogo
+            settings={settings}
+            isDark={isDark}
+            surface="auto"
+            heightScale={0.88}
+            showSubtitle={false}
+          />
           <div className="h-5 w-px bg-slate-200 dark:bg-blue-900/60 hidden sm:block" />
           <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-50 dark:bg-[#FD5202]/15 text-[#FD5202] border border-orange-200 dark:border-[#FD5202]/30">
             <Sparkles className="w-3 h-3" />

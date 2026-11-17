@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Department, Language, SectionCustomization } from '../types';
+import { Department, Language, SectionCustomization, SiteSettings } from '../types';
 import { translations } from '../utils/i18n';
 import { triggerCtaLink } from '../utils/ctaNavigation';
 import { RcgLogo } from './RcgLogo';
@@ -10,6 +10,8 @@ import { motion, AnimatePresence } from 'motion/react';
 interface DepartmentsSectionProps {
   departments: Department[];
   language: Language;
+  settings?: SiteSettings;
+  isDark?: boolean;
   sectionConfig?: SectionCustomization;
   onSelectDepartmentForInquiry: (deptName: string) => void;
 }
@@ -17,6 +19,8 @@ interface DepartmentsSectionProps {
 export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
   departments,
   language,
+  settings,
+  isDark = false,
   sectionConfig,
   onSelectDepartmentForInquiry,
 }) => {
@@ -85,7 +89,13 @@ export const DepartmentsSection: React.FC<DepartmentsSectionProps> = ({
                 {/* Card Top: Mini Logo + Dept Icon + Index */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 dark:border-blue-900/50 pb-3">
-                    <RcgLogo variant="color" height={28} showSubtitle={false} />
+                    <RcgLogo
+                      settings={settings}
+                      isDark={isDark}
+                      surface="auto"
+                      heightScale={0.78}
+                      showSubtitle={false}
+                    />
                     <div className="flex items-center gap-2">
                       <span className="p-1.5 rounded-lg bg-slate-100 dark:bg-blue-950 border border-slate-200 dark:border-blue-800">
                         {getDeptIcon(dept.key)}

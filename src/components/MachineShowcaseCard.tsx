@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product, Language } from '../types';
+import { Product, Language, SiteSettings } from '../types';
 import { RcgLogo } from './RcgLogo';
 import { Calendar, Phone, Check, Star, Wrench, Settings, Users, ShieldCheck, ArrowRight, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -7,6 +7,8 @@ import { motion } from 'motion/react';
 interface MachineShowcaseCardProps {
   product: Product;
   language: Language;
+  settings?: SiteSettings;
+  isDark?: boolean;
   onInquire: (productName: string) => void;
   onOpenSpecs: (product: Product) => void;
 }
@@ -14,6 +16,8 @@ interface MachineShowcaseCardProps {
 export const MachineShowcaseCard: React.FC<MachineShowcaseCardProps> = ({
   product,
   language,
+  settings,
+  isDark = false,
   onInquire,
   onOpenSpecs,
 }) => {
@@ -67,9 +71,9 @@ export const MachineShowcaseCard: React.FC<MachineShowcaseCardProps> = ({
         {/* RCG Logo Lockup */}
         <div className="shrink-0">
           <RcgLogo
-            variant="color"
-            height={36}
-            showSubtitle={true}
+            settings={settings}
+            isDark={isDark}
+            surface="auto"
             subtitleType={isRtl ? 'full' : 'en'}
           />
         </div>
